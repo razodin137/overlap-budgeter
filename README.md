@@ -34,7 +34,17 @@ once update <your-domain> --image ghcr.io/razodin137/overlap-budgeter:latest
 
 ## How updates are published
 
-Push to `main` and GitHub Actions builds and pushes a new image to GHCR
-(`:latest` plus an immutable `:sha-<short>`). Roll a live deploy to the new
-image with `once update`. To roll back, point `once update` at a previous
-`:sha-<short>` tag.
+From a host that's logged in to ghcr and has the `once` CLI:
+
+```bash
+git add . && git commit -m "..." && git push   # record the change
+./deploy.sh                                     # build, push image, roll the deploy
+```
+
+`deploy.sh` builds the image, pushes `:latest` and an immutable `:sha-<short>`
+to GHCR, and runs `once update` pinned to that `:sha-<short>` (so the pull is
+guaranteed). To roll back, point `once update` at a previous `:sha-<short>`:
+
+```bash
+once update timer.godisgood.top --image ghcr.io/razodin137/overlap-budgeter:sha-<previous>
+```
