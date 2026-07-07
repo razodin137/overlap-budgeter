@@ -72,6 +72,50 @@
 
         .input-group { margin-bottom: 28px; }
 
+        /* Day window: wake / bed time inputs + derived day-length readout */
+        .day-window-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .time-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-width: 110px;
+        }
+        .time-field-label {
+            color: var(--text-dim);
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .day-length {
+            color: var(--success);
+            font-size: 0.78rem;
+            font-weight: 600;
+            white-space: nowrap;
+            margin-left: auto;
+            align-self: flex-end;
+            padding-bottom: 12px;
+        }
+        input[type="time"] {
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            color: white;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 1rem;
+            box-sizing: border-box;
+            outline: none;
+            transition: border 0.3s;
+            color-scheme: dark;
+        }
+        input[type="time"]:focus { border-color: var(--primary-highlight); }
+
         input[type="text"], input[type="number"] {
             width: 100%;
             background: #222;
@@ -205,26 +249,106 @@
         }
         .btn-remove:hover { color: var(--danger); }
 
-        /* VISUALIZER */
-        .visualizer-container {
-            margin-top: 28px;
-            height: 22px;
+        /* VISUALIZER → wall-clock timeline (wake → bed) */
+        .timeline {
+            margin-top: 36px;
+            width: 100%;
+            position: relative;
+        }
+        .tl-bar {
+            position: relative;
+            height: 42px;
             width: 100%;
             background: #222;
-            border-radius: 4px;
-            overflow: hidden;
-            display: flex;
             border: 1px solid #333;
+            border-radius: 8px;
         }
+        /* Layers inside the bar. Each is absolute inset:0 and clips its children to
+           the rounded bar; the NOW line is a sibling with overflow visible so its
+           dot/label can sit just outside the bar. */
+        .tl-past, .tl-segs, .tl-blobs {
+            position: absolute; inset: 0;
+            overflow: hidden;
+            border-radius: 7px;
+        }
+        .tl-past { background: #111; width: 0; transition: width 0.4s ease; z-index: 1; }
+        .tl-segs { z-index: 2; }
+        .tl-blobs { z-index: 3; pointer-events: none; }
         .segment {
-            height: 100%;
+            position: absolute;
+            top: 0; bottom: 0;
             box-sizing: border-box;
             box-shadow: inset 1px 0 0 rgba(0,0,0,0.35);
-            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.6s ease, border-color 0.4s ease;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), left 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.6s ease, border-color 0.4s ease;
         }
         .segment.free {
             background: repeating-linear-gradient(45deg, #2a2a2a, #2a2a2a 4px, #232323 4px, #232323 8px) !important;
         }
+        /* Spent-time blobs: a block's identity color, dimmed to read as history. */
+        .spent-blob {
+            position: absolute;
+            top: 7px; bottom: 7px;
+            min-width: 2px;
+            border-radius: 4px;
+            opacity: 0.4;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+            transition: left 0.3s linear, width 0.3s linear;
+        }
+        /* NOW marker: green pulse line splitting past (dim) from future (bright). */
+        .tl-now {
+            position: absolute;
+            top: -4px; bottom: -4px;
+            width: 2px;
+            background: var(--success);
+            transform: translateX(-50%);
+            box-shadow: 0 0 10px rgba(6,214,160,0.65);
+            z-index: 6;
+            transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .tl-now-dot {
+            position: absolute;
+            top: -5px; left: 50%;
+            width: 9px; height: 9px;
+            transform: translateX(-50%);
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(6,214,160,0.85);
+            animation: nowPulse 1.4s infinite;
+        }
+        .tl-now-label {
+            position: absolute;
+            top: -24px; left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-size: 0.58rem;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            color: var(--success);
+            background: #0a0a0a;
+            padding: 1px 7px;
+            border-radius: 8px;
+            border: 1px solid rgba(6,214,160,0.45);
+        }
+        @keyframes nowPulse {
+            0%, 100% { box-shadow: 0 0 6px rgba(6,214,160,0.6); transform: translateX(-50%) scale(1); }
+            50%      { box-shadow: 0 0 12px rgba(6,214,160,1);  transform: translateX(-50%) scale(1.25); }
+        }
+        /* Hour ticks beneath the bar */
+        .tl-ticks {
+            position: relative;
+            height: 18px;
+            margin-top: 6px;
+            width: 100%;
+        }
+        .tl-tick {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            font-size: 0.58rem;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+        .tl-tick-end { transform: translateX(-100%); }
 
         .results-list { margin-top: 16px; }
         .result-item {
@@ -440,14 +564,19 @@
 
         /* Zen button lights up while zen is active */
         .hdr-btn.active { background: var(--primary-highlight); color: #fff; border-color: var(--primary-highlight); }
+        /* NOW button lights up green while the reflow is active (green = "present"). */
+        #nowBtn.active { background: var(--success); color: #0a0a0a; border-color: var(--success); }
 
         @media (max-width: 520px) {
             .app-container { padding: 22px; border-radius: 28px; }
             .category-row { grid-template-columns: 1.4fr 0.7fr 1.25fr 76px 34px; gap: 6px; }
             .td-elapsed { font-size: 0.8rem; }
             .td-budget { font-size: 0.58rem; }
+            .day-length { margin: 0; padding: 0; align-self: center; }
         }
         @media (prefers-reduced-motion: reduce) {
             .category-row.alarm { animation: none; }
+            .tl-now-dot { animation: none; }
             .progress-fill { transition: width 0.3s linear !important; }
+            .segment, .tl-now, .spent-blob { transition: width 0.3s linear, left 0.3s linear !important; }
         }

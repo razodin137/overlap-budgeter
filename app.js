@@ -1,6 +1,41 @@
 "use strict";
 
     const STORAGE_KEY = "overlapBudgeter.v1";
+    const DEFAULT_WAKE = "08:00";   // 8:00am
+    const DEFAULT_BED = "22:30";     // 10:30pm
+
+    /* ── Wall-clock helpers. The day is framed by a sleep/wake cycle:
+       wake → bed defines the bank of time (e.g. 8:00am→10:30pm = 14.5h).
+       Times are "HH:MM" strings; we work in minutes-since-midnight. ── */
+    function timeToMin(t) {
+        if (typeof t !== 'string' || !t.includes(':')) return 0;
+        const [h, m] = t.split(':').map(n => parseInt(n, 10) || 0);
+        return Math.max(0, Math.min(1439, h * 60 + m));
+    }
+    function dayBoundsMin() {
+        let wake = timeToMin(state.wake);
+        let bed = timeToMin(state.bed);
+        if (bed <= wake) bed += 1440;   // bed past midnight → wrap
+        return { wake, bed, len: bed - wake };
+    }
+    function dayLengthHours() { return dayBoundsMin().len / 60; }
+    // The bank IS the wake→bed window now (replaces the old manual total-bank input).
+    function bankHours() { return dayLengthHours(); }
+    function nowMin() {
+        const d = new Date(nowMs());
+        const n = d.getHours() * 60 + d.getMinutes();
+        const { wake, bed, len } = dayBoundsMin();   // bed already +1440 if wrapped
+        // Position the current wall-clock on the day's linear wake→bed axis.
+        let pos = n - wake;
+        if (pos < 0) pos += 1440;       // past midnight into a wrapped day
+        if (pos <= 0) return wake;
+        if (pos >= len) return bed;
+        return wake + pos;
+    }
+    function nowPctOfDay() {
+        const { wake, len } = dayBoundsMin();
+        return len > 0 ? Math.max(0, Math.min(100, (nowMin() - wake) / len * 100)) : 0;
+    }
 
     /* ── Preset color sets. Each row gets its own color from the active set, by index.
        The palette button cycles the active set. ── */
@@ -22,11 +57,14 @@
     // --- State ---
     // Each block: { id, name, hours|percent, banked(seconds), startedAt(ms|null), color, alarmed }
     let state = {
-        totalBank: 24,
+        wake: DEFAULT_WAKE,
+        bed: DEFAULT_BED,
         multitask: false,
         mode: 'edit',
         paletteIdx: 0,
         zenMode: 'auto',   // 'auto' (solo auto-open) | 'on' (always) | 'off' (never)
+        nowMode: false,    // "Start from NOW" reflow active?
+        nowBaseline: {},   // id → elapsedOf(b) snapshot (seconds) at the moment nowMode engaged
         fixed: [],
         percent: [],
     };
@@ -34,10 +72,12 @@
     let undoState = null;
     let undoTimer = null;
     let toastTimer = null;
+    let liveAllocs = null;   // most recent computeNowAllocations() result, shared with updateRow/timeline
 
     // Stable element refs so we never rebuild inputs mid-typing.
     const rowEls = {};   // id -> { row, timer, timerElapsed, timerBudget, btn, progress, progressFill }
     const segEls = {};   // id -> segment div
+    const blobEls = {};  // `${id}:${idx}` -> spent-blob div
     let freeSeg = null;
 
     // --- Persistence ---
@@ -51,14 +91,18 @@
             const s = JSON.parse(raw);
             if (s && typeof s === 'object') {
                 state = {
-                    totalBank: typeof s.totalBank === 'number' ? s.totalBank : 24,
+                    wake: typeof s.wake === 'string' ? s.wake : DEFAULT_WAKE,
+                    bed: typeof s.bed === 'string' ? s.bed : DEFAULT_BED,
                     multitask: !!s.multitask,
                     mode: (s.mode === 'run') ? 'run' : 'edit',
                     paletteIdx: Math.max(0, Math.min(PALETTE_SETS.length - 1, s.paletteIdx|0)),
                     zenMode: (s.zenMode === 'on' || s.zenMode === 'off') ? s.zenMode : 'auto',
+                    nowMode: !!s.nowMode,
+                    nowBaseline: (s.nowBaseline && typeof s.nowBaseline === 'object') ? s.nowBaseline : {},
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
                     percent: Array.isArray(s.percent) ? s.percent.map(norm) : [],
                 };
+                // Old saves (pre-NOW) had a numeric totalBank and no wake/bed — migrated to defaults above.
                 return true;
             }
         } catch (e) {}
@@ -74,6 +118,7 @@
             startedAt: b.startedAt || null,
             color: b.color || pickColor(),
             alarmed: !!b.alarmed,
+            intervals: Array.isArray(b.intervals) ? b.intervals.map(iv => ({ s: iv.s || 0, e: iv.e || 0 })) : [],
         };
     }
 
@@ -106,7 +151,10 @@
     }
     function stopBlock(b) {
         if (!b.startedAt) return;
-        b.banked += Math.floor((nowMs() - b.startedAt) / 1000);
+        const end = nowMs();
+        b.banked += Math.floor((end - b.startedAt) / 1000);
+        // Log the wall-clock interval so the NOW timeline can draw a spent blob for it.
+        b.intervals.push({ s: b.startedAt, e: end });
         b.startedAt = null;
         b.alarmed = false;
     }
@@ -121,6 +169,52 @@
     // --- Budget helpers ---
     function budgetSecFixed(b) { return (b.hours || 0) * 3600; }
     function budgetSecPercent(b, remainingHours) { return remainingHours * (b.percent || 0) / 100 * 3600; }
+
+    /* ── "Start from NOW" net resplit.
+       The day's plan gives each block a dayTarget (its plan budget). Time already
+       spent counts against it: weight = max(0, dayTarget − spent). The wall-clock
+       time left until bed is then handed out in proportion to those weights, so
+       over-spent budgets drop out (weight 0) and the future always fills now→bed
+       exactly. Returns { allocs: id→futureSec, remainingSec, totalSpentSec, dropped: [names] }. ── */
+    function dayTargetSec(b, remainingHours) {
+        const isPercent = state.percent.includes(b);
+        return isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b);
+    }
+    function computeNowAllocations(remainingHours) {
+        const { bed } = dayBoundsMin();
+        const remainingSec = Math.max(0, (bed - nowMin()) * 60);   // wall-clock now → bed
+        const all = [...state.fixed, ...state.percent];
+        const weights = {};
+        let W = 0;
+        all.forEach(b => {
+            const w = Math.max(0, dayTargetSec(b, remainingHours) - elapsedOf(b));
+            weights[b.id] = w;
+            W += w;
+        });
+        const allocs = {};
+        const dropped = [];
+        all.forEach(b => {
+            allocs[b.id] = W > 0 ? remainingSec * weights[b.id] / W : 0;
+            if (weights[b.id] <= 0 && elapsedOf(b) > 0) dropped.push(b.name);
+        });
+        const totalSpentSec = all.reduce((s, b) => s + elapsedOf(b), 0);
+        return { allocs, remainingSec, totalSpentSec, dropped };
+    }
+
+    /* Shared budget/elapsed pair for a row, zen card, results row, and segment.
+       NOW mode swaps in the resplit slice and counts only time spent since NOW
+       was engaged; otherwise the plan target and full elapsed. */
+    function rowBudget(b, isPercent, remainingHours) {
+        if (state.nowMode && liveAllocs) {
+            const budget = liveAllocs.allocs[b.id] || 0;
+            const baseline = state.nowBaseline[b.id] || 0;
+            return { budget, secAgainst: Math.max(0, elapsedOf(b) - baseline) };
+        }
+        return {
+            budget: isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b),
+            secAgainst: elapsedOf(b),
+        };
+    }
 
     // Color carries state: on-track = base, approaching budget = amber, over = red.
     function ratioColor(base, budgetSec, actualSec) {
@@ -181,6 +275,7 @@
         const block = list[idx];
         stopBlock(block);            // bank whatever was running so undo preserves it
         list.splice(idx, 1);
+        delete state.nowBaseline[block.id];
         save(); renderStructure();
         showUndo(listKey, idx, block);
     }
@@ -285,10 +380,13 @@
     function renderStructure() {
         const fC = document.getElementById('fixedContainer');
         const pC = document.getElementById('percentContainer');
-        const viz = document.getElementById('visualizer');
-        fC.innerHTML = ''; pC.innerHTML = ''; viz.innerHTML = '';
+        const tlSegs = document.getElementById('tlSegs');
+        const tlBlobs = document.getElementById('tlBlobs');
+        const tlTicks = document.getElementById('tlTicks');
+        fC.innerHTML = ''; pC.innerHTML = ''; tlSegs.innerHTML = ''; tlBlobs.innerHTML = '';
         for (const k in rowEls) delete rowEls[k];
         for (const k in segEls) delete segEls[k];
+        for (const k in blobEls) delete blobEls[k];
 
         const attach = (container, listKey, isPercent) => {
             state[listKey].forEach(b => {
@@ -305,7 +403,7 @@
                 };
                 const seg = document.createElement('div');
                 seg.className = 'segment';
-                viz.appendChild(seg);
+                tlSegs.appendChild(seg);
                 segEls[b.id] = seg;
             });
         };
@@ -315,9 +413,36 @@
         freeSeg = document.createElement('div');
         freeSeg.className = 'segment free';
         freeSeg.style.borderBottom = '2px solid transparent';
-        viz.appendChild(freeSeg);
+        tlSegs.appendChild(freeSeg);
 
+        renderTicks(tlTicks);
         updateLive();
+    }
+
+    /* Hour ticks under the bar: wake, bed, and a label every ~2h in between. */
+    function renderTicks(tlTicks) {
+        tlTicks.innerHTML = '';
+        const { wake, bed, len } = dayBoundsMin();
+        const step = len > 6 * 60 ? 120 : 60;   // ~2h labels for long days, 1h for short
+        const fmt = m => {
+            const h24 = Math.floor(m / 60) % 24, m60 = m % 60;
+            const ampm = h24 < 12 ? 'a' : 'p';
+            const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+            return h12 + (m60 === 0 ? '' : ':' + String(m60).padStart(2, '0')) + ampm;
+        };
+        for (let m = wake; m <= bed; m += step) {
+            const t = document.createElement('div');
+            t.className = 'tl-tick';
+            t.style.left = ((m - wake) / len * 100) + '%';
+            t.textContent = fmt(m);
+            tlTicks.appendChild(t);
+        }
+        // Always label bed exactly.
+        const end = document.createElement('div');
+        end.className = 'tl-tick tl-tick-end';
+        end.style.left = '100%';
+        end.textContent = fmt(bed % 1440);
+        tlTicks.appendChild(end);
     }
 
     function updateRow(b, isPercent, remainingHours) {
@@ -325,14 +450,16 @@
         if (!e) return;
         const sec = elapsedOf(b);
         const running = !!b.startedAt;
-        const budget = isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b);
         const runMode = state.mode === 'run';
 
+        // NOW mode → resplit slice + time-since-NOW; else plan target + full elapsed.
+        const { budget, secAgainst } = rowBudget(b, isPercent, remainingHours);
+
         // Big display: elapsed in edit mode, remaining in run mode
-        const shown = runMode ? Math.max(0, budget - sec) : sec;
+        const shown = runMode ? Math.max(0, budget - secAgainst) : sec;
         e.timerElapsed.textContent = formatDigitalTime(shown);
         e.timerBudget.textContent = runMode ? (running ? 'left' : '') : 'of ' + formatCompact(budget);
-        e.timerElapsed.style.color = ratioColor(b.color, budget, sec);
+        e.timerElapsed.style.color = ratioColor(b.color, budget, secAgainst);
         e.row.classList.toggle('active', running);
         e.row.classList.toggle('alarm', !!b.alarmed);
         // Running row lights up in its own identity color; idle falls back to the section rail.
@@ -343,13 +470,13 @@
 
         // Progress bar: fill IS the block color and grows with elapsed/budget.
         // Track is a faded tint of the same color; fill turns amber near, red over.
-        const pct = budget > 0 ? Math.min(100, (sec / budget) * 100) : (sec > 0 ? 100 : 0);
+        const pct = budget > 0 ? Math.min(100, (secAgainst / budget) * 100) : (secAgainst > 0 ? 100 : 0);
         e.progressFill.style.width = pct + '%';
-        e.progressFill.style.backgroundColor = ratioColor(b.color, budget, sec);
+        e.progressFill.style.backgroundColor = ratioColor(b.color, budget, secAgainst);
         e.progress.style.background = fade(b.color);
 
         // Alarm: crossed budget while running, fires once.
-        if (running && budget > 0 && sec >= budget && !b.alarmed) {
+        if (running && budget > 0 && secAgainst >= budget && !b.alarmed) {
             b.alarmed = true;
             triggerAlarm(b);
         }
@@ -365,7 +492,7 @@
     }
 
     function recalc() {
-        const bank = parseFloat(document.getElementById('totalBank').value) || 0;
+        const bank = bankHours();
         const totalFixed = state.fixed.reduce((s, b) => s + (b.hours || 0), 0);
         const remaining = Math.max(0, bank - totalFixed);
         document.getElementById('remainingCaption').textContent =
@@ -374,38 +501,133 @@
         let totalPercent = 0;
         state.percent.forEach(b => totalPercent += (b.percent || 0));
 
-        // Fixed segments: identity fill, status as a 2px baseline (transparent / amber / red).
-        state.fixed.forEach(b => {
-            const seg = segEls[b.id]; if (!seg) return;
-            const w = bank > 0 ? (b.hours / bank) * 100 : 0;
-            seg.style.width = w + '%';
-            const bsec = budgetSecFixed(b);
-            seg.style.backgroundColor = b.color;
-            seg.style.borderBottom = '2px solid ' + ratioColor('transparent', bsec, elapsedOf(b));
-            seg.title = b.name + ': ' + formatHumanTime(bsec) + ' budget · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-        });
+        // ── Timeline geometry. The bar spans wake→bed; segments are absolutely
+        // positioned. In plan mode they lay out across the whole day from wake;
+        // in NOW mode they lay out across now→bed using the net-resplit slices. ──
+        const dayLenH = dayLengthHours();
+        const dayLenSec = dayLenH * 3600;
+        const npct = nowPctOfDay();
+        let cursor = state.nowMode ? npct : 0;
 
-        // Percent segments: identity fill, status baseline; tooltip names the hour equivalent.
-        state.percent.forEach(b => {
-            const seg = segEls[b.id]; if (!seg) return;
-            const w = bank > 0 ? (b.percent / 100) * (remaining / bank) * 100 : 0;
-            seg.style.width = w + '%';
-            const bsec = budgetSecPercent(b, remaining);
+        const placeSeg = (b, widthPct, budgetSec, secAgainst) => {
+            const seg = segEls[b.id];
+            if (!seg) return;
+            seg.style.left = cursor + '%';
+            seg.style.width = Math.max(0, widthPct) + '%';
             seg.style.backgroundColor = b.color;
-            seg.style.borderBottom = '2px solid ' + ratioColor('transparent', bsec, elapsedOf(b));
-            seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-        });
+            seg.style.borderBottom = '2px solid ' + ratioColor('transparent', budgetSec, secAgainst);
+            cursor += Math.max(0, widthPct);
+        };
 
-        // Free / unallocated slack
-        const freeHours = remaining - remaining * (Math.min(totalPercent, 100) / 100);
-        freeSeg.style.width = (bank > 0 ? Math.max(0, freeHours / bank) * 100 : 0) + '%';
-        freeSeg.title = 'Free of remaining / unallocated: ' + formatHumanTime(freeHours * 3600);
-        document.getElementById('vizCaption').textContent =
-            formatHumanTime(remaining * 3600) + ' left to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
+        if (state.nowMode && liveAllocs) {
+            // NOW mode: net-resplit slices of now→bed, fixed then percent.
+            [...state.fixed, ...state.percent].forEach(b => {
+                const isPercent = state.percent.includes(b);
+                const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
+                placeSeg(b, dayLenSec > 0 ? budget / dayLenSec * 100 : 0, budget, secAgainst);
+                const seg = segEls[b.id];
+                if (seg) seg.title = b.name + ' · NOW resplit ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' spent since NOW';
+            });
+        } else {
+            // Plan mode: fixed blocks from wake, then percent of the remainder.
+            state.fixed.forEach(b => {
+                const bsec = budgetSecFixed(b);
+                const w = dayLenH > 0 ? (b.hours / dayLenH) * 100 : 0;
+                placeSeg(b, w, bsec, elapsedOf(b));
+                const seg = segEls[b.id];
+                if (seg) seg.title = b.name + ': ' + formatHumanTime(bsec) + ' budget · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+            });
+            state.percent.forEach(b => {
+                const bsec = budgetSecPercent(b, remaining);
+                const w = dayLenH > 0 ? (b.percent / 100) * (remaining / dayLenH) * 100 : 0;
+                placeSeg(b, w, bsec, elapsedOf(b));
+                const seg = segEls[b.id];
+                if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+            });
+        }
+
+        // Free / unallocated slack fills whatever's left.
+        freeSeg.style.left = cursor + '%';
+        const freePct = Math.max(0, 100 - cursor);
+        freeSeg.style.width = freePct + '%';
+        const freeHours = (freePct / 100) * dayLenH;
+        freeSeg.title = 'Free / unallocated: ' + formatHumanTime(freeHours * 3600);
+
+        // NOW line + dim past track (past track shown only in NOW mode).
+        const nowLine = document.getElementById('tlNow');
+        if (nowLine) {
+            nowLine.style.left = npct + '%';
+            const lbl = document.getElementById('tlNowLabel');
+            if (lbl) lbl.textContent = 'NOW ' + formatClock(nowMin());
+        }
+        const tlPast = document.getElementById('tlPast');
+        if (tlPast) tlPast.style.width = (state.nowMode ? npct : 0) + '%';
+
+        renderBlobs(npct);
+
+        // Caption: NOW summary in NOW mode, plan summary otherwise.
+        const caption = document.getElementById('vizCaption');
+        if (state.nowMode && liveAllocs) {
+            const parts = [formatHumanTime(liveAllocs.remainingSec) + ' left until bed',
+                           formatHumanTime(liveAllocs.totalSpentSec) + ' spent'];
+            if (liveAllocs.dropped.length) parts.push(liveAllocs.dropped.join(', ') + ' over budget');
+            caption.textContent = parts.join('  ·  ');
+        } else {
+            caption.textContent =
+                formatHumanTime(remaining * 3600) + ' left to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
+        }
 
         document.getElementById('warning').style.display = totalPercent > 100 ? 'block' : 'none';
         buildResults(bank, remaining, totalPercent);
         return { bank, remaining, totalPercent };
+    }
+
+    /* Spent blobs: one per logged interval (finished + the live running one),
+       clamped to today's [wake, now] window, positioned by wall-clock time. */
+    function renderBlobs(npct) {
+        const tlBlobs = document.getElementById('tlBlobs');
+        if (!tlBlobs) return;
+        const { startMs, lenMs } = dayWindowMs();
+        const now = nowMs();
+        const seen = new Set();
+        [...state.fixed, ...state.percent].forEach(b => {
+            const ivs = b.intervals.slice();
+            if (b.startedAt) ivs.push({ s: b.startedAt, e: now });   // live running interval
+            ivs.forEach((iv, i) => {
+                let s = Math.max(iv.s, startMs);
+                let e = Math.min(iv.e, now);          // blobs only in the past
+                if (e <= s) return;                   // entirely outside window / future
+                const key = b.id + ':' + i;
+                seen.add(key);
+                let el = blobEls[key];
+                if (!el) {
+                    el = document.createElement('div');
+                    el.className = 'spent-blob';
+                    el.style.backgroundColor = b.color;
+                    tlBlobs.appendChild(el);
+                    blobEls[key] = el;
+                }
+                el.style.left = ((s - startMs) / lenMs * 100) + '%';
+                el.style.width = Math.max(0.5, (e - s) / lenMs * 100) + '%';
+            });
+        });
+        // Drop blobs for intervals that no longer exist (block removed / day reset).
+        for (const key in blobEls) {
+            if (!seen.has(key)) { blobEls[key].remove(); delete blobEls[key]; }
+        }
+    }
+
+    function dayWindowMs() {
+        const { wake, len } = dayBoundsMin();
+        const d = new Date(nowMs()); d.setHours(0, 0, 0, 0);
+        return { startMs: d.getTime() + wake * 60000, lenMs: len * 60000 };
+    }
+    function formatClock(minSinceMidnight) {
+        const m = ((minSinceMidnight % 1440) + 1440) % 1440;
+        const h24 = Math.floor(m / 60), m60 = m % 60;
+        const ampm = h24 < 12 ? 'AM' : 'PM';
+        const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+        return h12 + ':' + String(m60).padStart(2, '0') + ' ' + ampm;
     }
 
     function buildResults(bank, remaining, totalPercent) {
@@ -440,24 +662,22 @@
         state.fixed.forEach(b => {
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
-            const budget = budgetSecFixed(b);
-            const sec = elapsedOf(b);
+            const { budget, secAgainst } = rowBudget(b, false, remaining);
             item.querySelector('span:first-child').textContent = `${b.name} (Fixed)`;
             item.querySelector('.budget-val').textContent = `Budget ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
-            tv.textContent = `Actual ${formatHumanTime(sec)}`;
-            tv.style.color = ratioColor(b.color, budget, sec);
+            tv.textContent = `Actual ${formatHumanTime(secAgainst)}`;
+            tv.style.color = ratioColor(b.color, budget, secAgainst);
         });
         state.percent.forEach(b => {
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
-            const budget = budgetSecPercent(b, remaining);
-            const sec = elapsedOf(b);
+            const { budget, secAgainst } = rowBudget(b, true, remaining);
             item.querySelector('span:first-child').textContent = `${b.name} (${b.percent}%)`;
             item.querySelector('.budget-val').textContent = `Budget ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
-            tv.textContent = `Actual ${formatHumanTime(sec)}`;
-            tv.style.color = ratioColor(b.color, budget, sec);
+            tv.textContent = `Actual ${formatHumanTime(secAgainst)}`;
+            tv.style.color = ratioColor(b.color, budget, secAgainst);
         });
         const freeRow = list.querySelector('.free-row');
         const freeH = Math.max(0, remaining - remaining * Math.min(totalPercent, 100) / 100);
@@ -468,6 +688,9 @@
     }
 
     function updateLive() {
+        // Compute the resplit BEFORE recalc: recalc's NOW-mode timeline branch reads
+        // liveAllocs, so it must be fresh, not one tick stale.
+        liveAllocs = computeNowAllocations(remainingHours());
         const { remaining } = recalc();
         state.fixed.forEach(b => updateRow(b, false, remaining));
         state.percent.forEach(b => updateRow(b, true, remaining));
@@ -481,7 +704,10 @@
             b.banked = 0;
             b.startedAt = null;
             b.alarmed = false;
+            b.intervals = [];
         });
+        state.nowMode = false;
+        state.nowBaseline = {};
         save();
         renderStructure();
     }
@@ -556,6 +782,35 @@
         save(); applyMode(); renderStructure();
     }
 
+    // --- Start from NOW: reflow the remainder (now → bed) across budgets ---
+    // Engaging snapshots each block's elapsed so the "left" countdowns only count
+    // time spent *after* this moment. Disengaging returns to the full-day plan.
+    function applyNowLabel() {
+        const btn = document.getElementById('nowBtn');
+        if (!btn) return;
+        btn.textContent = state.nowMode ? 'Plan' : 'Start from NOW';
+        btn.setAttribute('aria-pressed', state.nowMode ? 'true' : 'false');
+        btn.classList.toggle('active', state.nowMode);
+    }
+    function applyDayLabel() {
+        const el = document.getElementById('dayLength');
+        if (el) el.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';
+    }
+    function toggleNow() {
+        state.nowMode = !state.nowMode;
+        if (state.nowMode) {
+            // Snapshot elapsed per block — the baseline "now" counts against from here.
+            [...state.fixed, ...state.percent].forEach(b => {
+                state.nowBaseline[b.id] = elapsedOf(b);
+                b.alarmed = false;   // re-arm alarms against the new resplit budgets
+            });
+        } else {
+            state.nowBaseline = {};
+        }
+        applyNowLabel();
+        save(); updateLive();
+    }
+
     // --- Zen mode: full-screen focus on whatever is running ---
     // Visibility policy:
     //   auto: show whenever a solo timer runs (multitask off); dismiss until next start.
@@ -567,7 +822,7 @@
     let zenSig = '';              // set of running ids currently rendered (avoids per-tick churn)
 
     function remainingHours() {
-        const bank = parseFloat(document.getElementById('totalBank').value) || 0;
+        const bank = bankHours();
         const totalFixed = state.fixed.reduce((s, b) => s + (b.hours || 0), 0);
         return Math.max(0, bank - totalFixed);
     }
@@ -628,20 +883,19 @@
         // Update text in place every tick (no DOM churn while timers run).
         running.forEach(b => {
             const isPercent = state.percent.includes(b);
-            const budget = isPercent ? budgetSecPercent(b, remaining) : budgetSecFixed(b);
-            const sec = elapsedOf(b);
+            const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
             const card = content.querySelector(`.zen-card[data-id="${b.id}"]`);
             if (!card) return;
-            const shown = runMode ? Math.max(0, budget - sec) : sec;
+            const shown = runMode ? Math.max(0, budget - secAgainst) : secAgainst;
             card.querySelector('.zen-name').textContent = b.name;
             const time = card.querySelector('.zen-time');
             time.textContent = formatDigitalTime(shown);
-            time.style.color = ratioColor(b.color, budget, sec);
+            time.style.color = ratioColor(b.color, budget, secAgainst);
             card.querySelector('.zen-sub').textContent = runMode ? (b.startedAt ? 'left' : '') : 'of ' + formatCompact(budget);
-            const pct = budget > 0 ? Math.min(100, (sec / budget) * 100) : (sec > 0 ? 100 : 0);
+            const pct = budget > 0 ? Math.min(100, (secAgainst / budget) * 100) : (secAgainst > 0 ? 100 : 0);
             const fill = card.querySelector('.zen-progress-fill');
             fill.style.width = pct + '%';
-            fill.style.backgroundColor = ratioColor(b.color, budget, sec);
+            fill.style.backgroundColor = ratioColor(b.color, budget, secAgainst);
             card.querySelector('.zen-progress').style.background = fade(b.color);
             card.classList.toggle('alarm', !!b.alarmed);
         });
@@ -714,13 +968,27 @@
         applyPaletteLabel();
         applyMode();
         applyZenLabel();
+        applyNowLabel();
+        applyDayLabel();
 
-        const bankInput = document.getElementById('totalBank');
-        bankInput.value = state.totalBank;
-        bankInput.addEventListener('input', () => {
-            state.totalBank = parseFloat(bankInput.value) || 0;
-            save(); updateLive();
-        });
+        // Wake / bed define the day (and thus the bank). Either changing reflows
+        // the timeline + ticks and recomputes the resplit.
+        const wakeInput = document.getElementById('wakeInput');
+        const bedInput = document.getElementById('bedInput');
+        wakeInput.value = state.wake;
+        bedInput.value = state.bed;
+        const onDayChange = () => {
+            state.wake = wakeInput.value || DEFAULT_WAKE;
+            state.bed = bedInput.value || DEFAULT_BED;
+            save();
+            applyDayLabel();
+            renderTicks(document.getElementById('tlTicks'));
+            updateLive();
+        };
+        wakeInput.addEventListener('input', onDayChange);
+        bedInput.addEventListener('input', onDayChange);
+
+        document.getElementById('nowBtn').addEventListener('click', () => { ensureAudio(); toggleNow(); });
 
         const mt = document.getElementById('multitask');
         mt.checked = state.multitask;
