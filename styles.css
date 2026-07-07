@@ -166,6 +166,11 @@
             border-left: 3px solid #3a3a3a;
         }
         .category-row.is-percent { border-left: 3px dashed #2a2a2a; }
+        /* Fixed rows carry an extra start-time input and a Done button: name | time |
+           hrs | display | start/stop | Done | remove. */
+        .category-row.is-fixed { grid-template-columns: 1.1fr 0.85fr 0.5fr 0.85fr 56px 54px 28px; }
+        .category-row.done { opacity: 0.62; }
+        .segment.done { opacity: 0.5; }
         .category-row.active { background: #222; }
         .category-row.alarm { animation: alarmPulse 0.9s infinite; }
 
@@ -226,6 +231,17 @@
             transition: background 0.25s, color 0.25s;
         }
         .btn-timer.running { background: var(--accent-color); color: #111; }
+
+        /* Done button (fixed blocks only): release leftover planned time to the splits.
+           Visible in run mode too, so it stays the one explicit "I'm finished" action. */
+        .btn-done {
+            background: #333; border: none; color: #ddd;
+            min-height: 44px; padding: 10px 4px; border-radius: 10px;
+            cursor: pointer; font-size: 0.66rem; text-transform: uppercase;
+            font-weight: bold; transition: background 0.25s, color 0.25s;
+        }
+        .btn-done:hover { background: #3a3a3a; color: #fff; }
+        .btn-done.done { background: var(--success); color: #0a0a0a; }
 
         .btn-add {
             width: 100%;
@@ -489,7 +505,12 @@
             grid-template-columns: 1fr auto;
             cursor: pointer;
         }
+        /* Fixed rows keep their Done button in run mode: name | display | Done. */
+        .app-container.mode-run .category-row.is-fixed {
+            grid-template-columns: 1fr auto auto;
+        }
         .app-container.mode-run .category-row input[type="number"],
+        .app-container.mode-run .category-row input[type="time"],
         .app-container.mode-run .category-row .btn-timer,
         .app-container.mode-run .category-row .btn-remove { display: none; }
         .app-container.mode-run .category-row .td-budget { display: none; }
@@ -570,6 +591,7 @@
         @media (max-width: 520px) {
             .app-container { padding: 22px; border-radius: 28px; }
             .category-row { grid-template-columns: 1.4fr 0.7fr 1.25fr 76px 34px; gap: 6px; }
+            .category-row.is-fixed { grid-template-columns: 1fr 0.8fr 0.45fr 0.8fr 50px 48px 26px; gap: 5px; }
             .td-elapsed { font-size: 0.8rem; }
             .td-budget { font-size: 0.58rem; }
             .day-length { margin: 0; padding: 0; align-self: center; }

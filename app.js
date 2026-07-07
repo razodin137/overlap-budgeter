@@ -114,6 +114,8 @@
             name: b.name || 'Task',
             hours: b.hours || 0,
             percent: b.percent || 0,
+            time: b.time || '',   // fixed blocks only: optional HH:MM start time-of-day
+            done: !!b.done,       // fixed blocks only: marked finished → release leftover to percent splits
             banked: b.banked || 0,
             startedAt: b.startedAt || null,
             color: b.color || pickColor(),
@@ -124,12 +126,18 @@
 
     function seedDefaults() {
         state.fixed = [
-            { id: uid(), name: 'Lunch', hours: 1, banked: 0, startedAt: null, color: pickColor(), alarmed: false },
-            { id: uid(), name: 'Dinner', hours: 1, banked: 0, startedAt: null, color: pickColor(), alarmed: false },
+            { id: uid(), name: 'Breakfast', hours: 0.5, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
+            { id: uid(), name: 'Lunch', hours: 0.5, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
+            { id: uid(), name: 'Transitions', hours: 1, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
+            { id: uid(), name: 'Night wind-down', hours: 1, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
         ];
         state.percent = [
-            { id: uid(), name: 'Bills', percent: 50, banked: 0, startedAt: null, color: pickColor(), alarmed: false },
-            { id: uid(), name: 'Fun', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false },
+            { id: uid(), name: 'Tithe', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
+            { id: uid(), name: 'Freedom Fund', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
+            { id: uid(), name: 'Bills', percent: 50, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
+            { id: uid(), name: 'Education', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
+            { id: uid(), name: 'Desires', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
+            { id: uid(), name: 'Fun', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
         ];
     }
 
@@ -146,14 +154,23 @@
         }
         b.startedAt = nowMs();
         b.alarmed = false;       // re-arm the alarm when a fresh run begins
+        b.done = false;          // resuming a finished block un-finishes it (re-reserves its plan)
         // A fresh start re-opens zen (auto mode shows it for solo timers).
         zenDismissed = false;
+    }
+    // DONE: stop the timer (banking what was spent) and release any leftover planned
+    // time back to the percent splits. Toggling again undoes it (re-reserves the plan).
+    function toggleDone(b) {
+        if (b.done) { b.done = false; }
+        else { if (b.startedAt) stopBlock(b); b.done = true; b.alarmed = false; }
+        save(); updateLive();
     }
     function stopBlock(b) {
         if (!b.startedAt) return;
         const end = nowMs();
         b.banked += Math.floor((end - b.startedAt) / 1000);
         // Log the wall-clock interval so the NOW timeline can draw a spent blob for it.
+        if (!Array.isArray(b.intervals)) b.intervals = [];
         b.intervals.push({ s: b.startedAt, e: end });
         b.startedAt = null;
         b.alarmed = false;
@@ -167,7 +184,13 @@
     }
 
     // --- Budget helpers ---
-    function budgetSecFixed(b) { return (b.hours || 0) * 3600; }
+    // A fixed block "reserves" time out of the day's bank. While not done it reserves
+    // its full planned budget; once DONE it reserves only what was actually spent, so
+    // any leftover flows back into the percent splits (their budgets grow). This is the
+    // single knob both the timeline layout and the percent split read from.
+    function plannedSec(b) { return (b.hours || 0) * 3600; }
+    function reserveSec(b) { return b.done ? Math.min(plannedSec(b), elapsedOf(b)) : plannedSec(b); }
+    function budgetSecFixed(b) { return reserveSec(b); }
     function budgetSecPercent(b, remainingHours) { return remainingHours * (b.percent || 0) / 100 * 3600; }
 
     /* ── "Start from NOW" net resplit.
@@ -224,6 +247,12 @@
         if (r >= 0.85) return '#ffd166';
         return base;
     }
+    // Done blocks read as finished (green) — unless they ran over their planned
+    // budget, in which case they stay red like any over-spend.
+    function displayColor(b, budgetSec, actualSec) {
+        if (b.done) return (plannedSec(b) > 0 && actualSec > plannedSec(b)) ? '#ff4d4d' : '#06d6a0';
+        return ratioColor(b.color, budgetSec, actualSec);
+    }
 
     // --- Formatting ---
     function formatHumanTime(totalSeconds) {
@@ -259,12 +288,12 @@
 
     // --- Add / remove ---
     function addFixed() {
-        const b = { id: uid(), name: 'New Block', hours: 1, banked: 0, startedAt: null, color: pickColor(), alarmed: false };
+        const b = { id: uid(), name: 'New Block', hours: 1, time: '', done: false, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] };
         state.fixed.push(b);
         save(); renderStructure(); focusName(b.id);
     }
     function addPercent() {
-        const b = { id: uid(), name: 'New Cat', percent: 0, banked: 0, startedAt: null, color: pickColor(), alarmed: false };
+        const b = { id: uid(), name: 'New Cat', percent: 0, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] };
         state.percent.push(b);
         save(); renderStructure(); focusName(b.id);
     }
@@ -343,6 +372,16 @@
         num.placeholder = isPercent ? '%' : 'hrs';
         num.addEventListener('input', () => updateField(listKey, b.id, isPercent ? 'percent' : 'hours', num.value));
 
+        // Fixed blocks only: an optional start time-of-day that anchors the bar.
+        let time = null;
+        if (!isPercent) {
+            time = document.createElement('input');
+            time.type = 'time'; time.value = b.time || '';
+            time.title = 'Start time of day (optional — anchors this block on the timeline)';
+            if (state.mode === 'run') time.readOnly = true;
+            time.addEventListener('input', () => updateField(listKey, b.id, 'time', time.value));
+        }
+
         const disp = document.createElement('div');
         disp.className = 'timer-display';
         const dispElapsed = document.createElement('div');
@@ -354,6 +393,17 @@
         const btn = document.createElement('button');
         btn.className = 'btn-timer';
         btn.addEventListener('click', () => toggleBlock(listKey, b.id));
+
+        // Fixed blocks only: a DONE toggle that releases leftover planned time to the
+        // percent splits. stopPropagation so tapping it in run mode doesn't also toggle
+        // the timer via the row handler.
+        let doneBtn = null;
+        if (!isPercent) {
+            doneBtn = document.createElement('button');
+            doneBtn.className = 'btn-done';
+            doneBtn.title = 'Mark done — release any leftover time to your other categories (tap again to undo)';
+            doneBtn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); toggleDone(b); });
+        }
 
         const rm = document.createElement('button');
         rm.className = 'btn-remove'; rm.textContent = '×';
@@ -367,6 +417,8 @@
         progress.appendChild(fill);
 
         row.append(name, num, disp, btn, rm, progress);
+        if (time) row.insertBefore(time, num);   // fixed rows: name | time | hrs | …
+        if (doneBtn) row.insertBefore(doneBtn, rm);   // … start/stop | Done | remove
 
         // Run mode: tap the whole row to start/stop. (Edit mode uses the button.)
         row.addEventListener('click', (e) => {
@@ -398,6 +450,7 @@
                     timerElapsed: row.querySelector('.td-elapsed'),
                     timerBudget: row.querySelector('.td-budget'),
                     btn: row.querySelector('.btn-timer'),
+                    doneBtn: row.querySelector('.btn-done'),
                     progress: row.querySelector('.progress'),
                     progressFill: row.querySelector('.progress-fill'),
                 };
@@ -458,21 +511,29 @@
         // Big display: elapsed in edit mode, remaining in run mode
         const shown = runMode ? Math.max(0, budget - secAgainst) : sec;
         e.timerElapsed.textContent = formatDigitalTime(shown);
-        e.timerBudget.textContent = runMode ? (running ? 'left' : '') : 'of ' + formatCompact(budget);
-        e.timerElapsed.style.color = ratioColor(b.color, budget, secAgainst);
+        const done = !!b.done;
+        e.timerBudget.textContent = runMode
+            ? (running ? 'left' : (done ? 'done' : ''))
+            : (done ? 'done · ' + formatCompact(sec) : 'of ' + formatCompact(budget));
+        e.timerElapsed.style.color = displayColor(b, budget, secAgainst);
         e.row.classList.toggle('active', running);
+        e.row.classList.toggle('done', done);
         e.row.classList.toggle('alarm', !!b.alarmed);
         // Running row lights up in its own identity color; idle falls back to the section rail.
-        e.row.style.borderLeftColor = running ? b.color : '';
-        e.row.style.borderLeftStyle = running ? 'solid' : '';
+        e.row.style.borderLeftColor = running ? b.color : (done ? '#06d6a0' : '');
+        e.row.style.borderLeftStyle = (running || done) ? 'solid' : '';
         e.btn.classList.toggle('running', running);
         e.btn.textContent = running ? 'Stop' : 'Start';
+        if (e.doneBtn) {
+            e.doneBtn.classList.toggle('done', done);
+            e.doneBtn.textContent = done ? 'Undo' : 'Done';
+        }
 
         // Progress bar: fill IS the block color and grows with elapsed/budget.
         // Track is a faded tint of the same color; fill turns amber near, red over.
         const pct = budget > 0 ? Math.min(100, (secAgainst / budget) * 100) : (secAgainst > 0 ? 100 : 0);
         e.progressFill.style.width = pct + '%';
-        e.progressFill.style.backgroundColor = ratioColor(b.color, budget, secAgainst);
+        e.progressFill.style.backgroundColor = displayColor(b, budget, secAgainst);
         e.progress.style.background = fade(b.color);
 
         // Alarm: crossed budget while running, fires once.
@@ -493,7 +554,7 @@
 
     function recalc() {
         const bank = bankHours();
-        const totalFixed = state.fixed.reduce((s, b) => s + (b.hours || 0), 0);
+        const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
         const remaining = Math.max(0, bank - totalFixed);
         document.getElementById('remainingCaption').textContent =
             remaining > 0 ? 'splitting ' + formatHumanTime(remaining * 3600) + ' after fixed blocks'
@@ -502,21 +563,46 @@
         state.percent.forEach(b => totalPercent += (b.percent || 0));
 
         // ── Timeline geometry. The bar spans wake→bed; segments are absolutely
-        // positioned. In plan mode they lay out across the whole day from wake;
-        // in NOW mode they lay out across now→bed using the net-resplit slices. ──
+        // positioned. In plan mode a fixed block with a start time anchors at that
+        // wall-clock position (otherwise it flows from the cursor); percent blocks
+        // fill the remainder. In NOW mode everything flows now→bed as resplit slices. ──
+        const { wake, len } = dayBoundsMin();
         const dayLenH = dayLengthHours();
         const dayLenSec = dayLenH * 3600;
         const npct = nowPctOfDay();
         let cursor = state.nowMode ? npct : 0;
 
-        const placeSeg = (b, widthPct, budgetSec, secAgainst) => {
+        // Stripes overlay the bar's solid color; density grows with spent/budget so
+        // you can read how much of a block has been used straight off the bar.
+        const stripe = (seg, budgetSec, secAgainst) => {
+            const r = budgetSec > 0 ? Math.min(1, secAgainst / budgetSec) : (secAgainst > 0 ? 1 : 0);
+            if (r <= 0) { seg.style.backgroundImage = 'none'; return; }
+            const period = Math.max(4, 40 * (1 - r) + 4);   // sparse (40px) → dense (4px) as it fills
+            const a = (0.22 * r).toFixed(2);
+            const half = (period / 2).toFixed(1);
+            seg.style.backgroundImage =
+                `repeating-linear-gradient(45deg, rgba(0,0,0,${a}) 0, rgba(0,0,0,${a}) ${half}px, transparent ${half}px, transparent ${period.toFixed(1)}px)`;
+        };
+
+        const placeSeg = (b, leftPct, widthPct, budgetSec, secAgainst) => {
             const seg = segEls[b.id];
             if (!seg) return;
-            seg.style.left = cursor + '%';
-            seg.style.width = Math.max(0, widthPct) + '%';
+            const w = Math.max(0, widthPct);
+            seg.style.left = leftPct + '%';
+            seg.style.width = w + '%';
             seg.style.backgroundColor = b.color;
-            seg.style.borderBottom = '2px solid ' + ratioColor('transparent', budgetSec, secAgainst);
-            cursor += Math.max(0, widthPct);
+            seg.classList.toggle('done', !!b.done);
+            seg.style.borderBottom = '2px solid ' + displayColor(b, budgetSec, secAgainst);
+            stripe(seg, budgetSec, secAgainst);
+            cursor = Math.max(cursor, leftPct + w);
+        };
+
+        // Anchored left% for a fixed block's start time (clamped to the day window).
+        const fixedLeftPct = (b) => {
+            if (!b.time) return cursor;
+            let t = timeToMin(b.time);
+            if (t < wake) t += 1440;            // past-midnight block in a wrapped day
+            return len > 0 ? Math.max(0, Math.min(100, ((t - wake) / len) * 100)) : 0;
         };
 
         if (state.nowMode && liveAllocs) {
@@ -524,23 +610,26 @@
             [...state.fixed, ...state.percent].forEach(b => {
                 const isPercent = state.percent.includes(b);
                 const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
-                placeSeg(b, dayLenSec > 0 ? budget / dayLenSec * 100 : 0, budget, secAgainst);
+                const w = dayLenSec > 0 ? budget / dayLenSec * 100 : 0;
+                placeSeg(b, cursor, w, budget, secAgainst);
                 const seg = segEls[b.id];
                 if (seg) seg.title = b.name + ' · NOW resplit ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' spent since NOW';
             });
         } else {
-            // Plan mode: fixed blocks from wake, then percent of the remainder.
+            // Plan mode: fixed blocks at their start time (or from the cursor), then
+            // percent of the remainder.
             state.fixed.forEach(b => {
-                const bsec = budgetSecFixed(b);
-                const w = dayLenH > 0 ? (b.hours / dayLenH) * 100 : 0;
-                placeSeg(b, w, bsec, elapsedOf(b));
+                const bsec = budgetSecFixed(b);   // = reserve: planned, or actual-once-done
+                const w = dayLenSec > 0 ? (bsec / dayLenSec) * 100 : 0;
+                const left = fixedLeftPct(b);
+                placeSeg(b, left, w, bsec, elapsedOf(b));
                 const seg = segEls[b.id];
-                if (seg) seg.title = b.name + ': ' + formatHumanTime(bsec) + ' budget · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+                if (seg) seg.title = b.name + (b.time ? ' @ ' + formatClock(timeToMin(b.time)) : '') + (b.done ? ' · done' : '') + ': ' + formatHumanTime(bsec) + (b.done ? ' taken' : ' budget') + ' · ' + formatHumanTime(elapsedOf(b)) + ' actual';
             });
             state.percent.forEach(b => {
                 const bsec = budgetSecPercent(b, remaining);
                 const w = dayLenH > 0 ? (b.percent / 100) * (remaining / dayLenH) * 100 : 0;
-                placeSeg(b, w, bsec, elapsedOf(b));
+                placeSeg(b, cursor, w, bsec, elapsedOf(b));
                 const seg = segEls[b.id];
                 if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
             });
@@ -591,7 +680,7 @@
         const now = nowMs();
         const seen = new Set();
         [...state.fixed, ...state.percent].forEach(b => {
-            const ivs = b.intervals.slice();
+            const ivs = (Array.isArray(b.intervals) ? b.intervals : []).slice();
             if (b.startedAt) ivs.push({ s: b.startedAt, e: now });   // live running interval
             ivs.forEach((iv, i) => {
                 let s = Math.max(iv.s, startMs);
@@ -663,11 +752,11 @@
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
             const { budget, secAgainst } = rowBudget(b, false, remaining);
-            item.querySelector('span:first-child').textContent = `${b.name} (Fixed)`;
-            item.querySelector('.budget-val').textContent = `Budget ${formatHumanTime(budget)}`;
+            item.querySelector('span:first-child').textContent = `${b.name} (Fixed${b.done ? ' · done' : ''})`;
+            item.querySelector('.budget-val').textContent = `${b.done ? 'Taken' : 'Budget'} ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
             tv.textContent = `Actual ${formatHumanTime(secAgainst)}`;
-            tv.style.color = ratioColor(b.color, budget, secAgainst);
+            tv.style.color = displayColor(b, budget, secAgainst);
         });
         state.percent.forEach(b => {
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
@@ -823,7 +912,7 @@
 
     function remainingHours() {
         const bank = bankHours();
-        const totalFixed = state.fixed.reduce((s, b) => s + (b.hours || 0), 0);
+        const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
         return Math.max(0, bank - totalFixed);
     }
     function runningBlocks() {
