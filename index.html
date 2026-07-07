@@ -8,7 +8,7 @@
 <title>Overlap Time Budgeter</title>
 <style>
   :root {
-    /* Midnight & Lava (Dark) — default */
+    /* Midnight & Lava (Dark) — default chrome */
     --bg-page: #0D0F12;
     --bg-container: #0D0F12;
     --banner-bg: #94A0B3;
@@ -21,16 +21,13 @@
     --accent: #D33C29;
     --warning: #ff4757;
     --status-amber: #FFB454;
+    --status-good: #FFFFFF;
     --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     --tape-track: rgba(255, 255, 255, 0.06);
     --tape-border: rgba(255, 255, 255, 0.08);
     --hairline: rgba(255, 255, 255, 0.08);
-    --banner-h: 52px;
-    --tape-h: 64px;
   }
-
   body[data-theme="light"] {
-    /* Ocean & Dawn (Light) — chrome flips, cards stay cascade */
     --bg-page: #E8ECF1;
     --bg-container: #F4F6F9;
     --banner-bg: #5B7C99;
@@ -43,6 +40,7 @@
     --accent: #D33C29;
     --warning: #ff4757;
     --status-amber: #E89938;
+    --status-good: #1A1F26;
     --card-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
     --tape-track: rgba(26, 31, 38, 0.08);
     --tape-border: rgba(26, 31, 38, 0.10);
@@ -50,9 +48,7 @@
   }
 
   * { box-sizing: border-box; }
-
   html, body { height: 100%; margin: 0; }
-
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', Roboto, sans-serif;
     background: var(--bg-page);
@@ -61,7 +57,6 @@
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior-y: none;
   }
-
   .app {
     position: relative;
     max-width: 428px;
@@ -72,14 +67,11 @@
     flex-direction: column;
     overflow-x: hidden;
     box-shadow: 0 0 60px rgba(0,0,0,0.25);
+    padding-bottom: 110px;
   }
 
-  /* ── Sticky head: banner + tape move together (no gap) ── */
-  .sticky-head {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-  }
+  /* ── Sticky head: banner + tape ── */
+  .sticky-head { position: sticky; top: 0; z-index: 20; }
   .top-banner {
     display: flex;
     align-items: center;
@@ -90,393 +82,221 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     transition: background 0.4s ease;
+    position: relative;
   }
   .top-banner h1 {
     margin: 0;
     font-size: 18px;
     font-weight: 700;
     letter-spacing: 0.3px;
-    text-transform: none;
   }
-  .theme-btn {
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 32px;
-    height: 32px;
+  .head-btn-group { position: absolute; display: flex; gap: 8px; align-items: center; }
+  .head-btn-group.left { left: 12px; }
+  .head-btn-group.right { right: 12px; }
+  .icon-btn {
+    width: 32px; height: 32px;
     border-radius: 50%;
     border: none;
     background: rgba(255, 255, 255, 0.2);
     color: #FFFFFF;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0;
     transition: transform 0.2s ease, background 0.3s ease;
+    font-size: 13px; font-weight: 800; letter-spacing: -0.5px;
   }
-  .theme-btn:active { transform: translateY(-50%) scale(0.9); }
-  .theme-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-  .theme-btn svg { width: 18px; height: 18px; fill: currentColor; pointer-events: none; }
-  .theme-btn .icon-moon { display: none; }
-  body[data-theme="light"] .theme-btn .icon-sun { display: none; }
-  body[data-theme="light"] .theme-btn .icon-moon { display: block; }
+  .icon-btn:active { transform: scale(0.9); }
+  .icon-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .icon-btn svg { width: 17px; height: 17px; fill: currentColor; pointer-events: none; }
+  .icon-btn .icon-moon { display: none; }
+  body[data-theme="light"] .icon-btn .icon-sun { display: none; }
+  body[data-theme="light"] .icon-btn .icon-moon { display: block; }
 
-  /* ── Budget Tape (signature) ── */
+  /* ── Budget Tape ── */
   .tape-wrap {
     background: var(--bg-container);
     padding: 14px 16px 12px;
     border-bottom: 1px solid var(--hairline);
     transition: background 0.4s ease;
   }
-  .tape-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 8px;
-    gap: 10px;
-  }
-  .tape-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
-    color: var(--text-secondary);
-  }
-  .tape-caption {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    text-align: right;
-    min-width: 0;
-    font-variant-numeric: tabular-nums;
-  }
+  .tape-meta { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 10px; }
+  .tape-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-secondary); }
+  .tape-caption { font-size: 12px; font-weight: 500; color: var(--text-secondary); text-align: right; min-width: 0; font-variant-numeric: tabular-nums; }
   .tape {
-    height: 22px;
-    width: 100%;
+    height: 22px; width: 100%;
     background: var(--tape-track);
     border: 1px solid var(--tape-border);
-    border-radius: 7px;
-    overflow: hidden;
-    display: flex;
+    border-radius: 7px; overflow: hidden; display: flex;
   }
   .segment {
-    height: 100%;
-    box-sizing: border-box;
-    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-                border-color 0.4s ease;
+    height: 100%; box-sizing: border-box;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.4s ease;
     position: relative;
   }
-  .segment::after {           /* status baseline inside the segment */
-    content: "";
-    position: absolute;
-    left: 0; bottom: 0;
-    height: 3px;
-    width: var(--bl-pct, 0%);
+  .segment::after {
+    content: ""; position: absolute; left: 0; bottom: 0;
+    height: 3px; width: var(--bl-pct, 0%);
     background: var(--bl-color, transparent);
     transition: width 0.5s linear, background 0.4s ease;
   }
   .segment.free {
-    background: repeating-linear-gradient(135deg,
-      transparent, transparent 5px,
+    background: repeating-linear-gradient(135deg, transparent, transparent 5px,
       rgba(128,128,128,0.18) 5px, rgba(128,128,128,0.18) 9px) !important;
     border-left: 1px dashed var(--tape-border);
   }
   .segment.free::after { display: none; }
 
   /* ── Settings / glass panels ── */
-  .glass-panels {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 22px 16px 8px;
-  }
+  .glass-panels { display: flex; flex-direction: column; gap: 16px; padding: 22px 16px 8px; }
   .field { display: flex; flex-direction: column; gap: 6px; }
-  .field label, .toggle-label {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-secondary);
-  }
+  .field label, .toggle-label { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
   .toggle-label { font-size: 13px; line-height: 1.35; }
 
   input[type="number"], input[type="text"] {
-    font-family: inherit;
-    font-size: 16px;
-    font-weight: 500;
+    font-family: inherit; font-size: 16px; font-weight: 500;
     color: var(--text-primary);
     background: var(--input-bg);
     border: var(--input-border);
     border-radius: 12px;
-    padding: 12px 14px;
-    outline: none;
-    width: 100%;
+    padding: 12px 14px; outline: none; width: 100%;
     transition: border-color 0.3s ease, background 0.3s ease;
   }
-  input[type="number"]:focus, input[type="text"]:focus {
-    border-color: var(--accent);
-  }
+  input[type="number"]:focus, input[type="text"]:focus { border-color: var(--accent); }
   body[data-theme="dark"] input[type="number"]:focus,
-  body[data-theme="dark"] input[type="text"]:focus {
-    background: rgba(255, 255, 255, 0.08);
-  }
-  body[data-theme="light"] input[type="number"]:focus,
-  body[data-theme="light"] input[type="text"]:focus {
-    background: rgba(0, 0, 0, 0.05);
-  }
+  body[data-theme="dark"] input[type="text"]:focus { background: rgba(255, 255, 255, 0.08); }
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 
-  /* Toggle switch */
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    cursor: pointer;
-    user-select: none;
-  }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; user-select: none; }
   .toggle-row input { display: none; }
   .toggle-switch {
-    position: relative;
-    width: 48px;
-    height: 28px;
+    position: relative; width: 48px; height: 28px;
     background: rgba(128, 128, 128, 0.35);
-    border-radius: 30px;
-    flex-shrink: 0;
-    transition: background 0.3s ease;
+    border-radius: 30px; flex-shrink: 0; transition: background 0.3s ease;
   }
   .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 3px; left: 3px;
-    width: 22px; height: 22px;
-    background: #FFFFFF;
-    border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.25);
-    transition: transform 0.3s ease;
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 22px; height: 22px; background: #FFFFFF; border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.25); transition: transform 0.3s ease;
   }
   .toggle-row input:checked + .toggle-switch { background: var(--accent); }
   .toggle-row input:checked + .toggle-switch::after { transform: translateX(20px); }
 
-  /* Add buttons */
   .action-btns { display: flex; gap: 18px; flex-wrap: wrap; }
   .text-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    padding: 6px 0;
-    transition: color 0.2s ease, transform 0.15s ease;
+    background: transparent; border: none; color: var(--text-primary);
+    font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+    padding: 6px 0; transition: color 0.2s ease, transform 0.15s ease;
   }
   .text-btn:hover { color: var(--accent); }
   .text-btn:active { transform: scale(0.96); }
   .text-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 
-  .warning-text {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--warning);
-    display: none;
-  }
+  .warning-text { margin: 0; font-size: 13px; font-weight: 600; color: var(--warning); display: none; }
   .warning-text.show { display: block; }
 
   /* ── Timer list ── */
-  .list-header {
-    padding: 18px 16px 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-  }
+  .list-header { padding: 18px 16px 6px; display: flex; justify-content: space-between; align-items: baseline; }
   .list-header .tape-label { color: var(--text-secondary); }
-
-  .timer-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 4px 16px 24px;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 32px 20px;
-    color: var(--text-secondary);
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 1.5;
-  }
+  .timer-list { display: flex; flex-direction: column; gap: 12px; padding: 4px 16px 24px; }
+  .empty-state { text-align: center; padding: 32px 20px; color: var(--text-secondary); font-size: 15px; font-weight: 500; line-height: 1.5; }
 
   .timer-card {
     position: relative;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
+    display: flex; flex-direction: column;
+    gap: 16px;
     border-radius: 18px;
-    padding: 22px 22px;
+    padding: 24px 22px 20px;
     box-shadow: var(--card-shadow);
-    cursor: pointer;
-    color: #FFFFFF;
-    overflow: hidden;
-    user-select: none;
-    -webkit-user-select: none;
+    cursor: pointer; color: #FFFFFF; overflow: hidden;
+    user-select: none; -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 0.18s ease, box-shadow 0.3s ease;
+    transition: transform 0.18s ease, box-shadow 0.3s ease, filter 0.3s ease;
   }
-  .timer-card:active { transform: scale(0.97); }
+  .timer-card:active { transform: scale(0.96); }
   .timer-card:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
   .timer-card.active { animation: pulseRing 2.4s infinite; }
   .timer-card.active .status-dot { opacity: 1; }
   .timer-card:not(.active) .status-dot { opacity: 0; }
+  .timer-card.alarm { animation: alarmPulse 0.9s infinite; }
 
   @keyframes pulseRing {
     0%   { box-shadow: var(--card-shadow), 0 0 0 0 rgba(255, 255, 255, 0.30); }
     70%  { box-shadow: var(--card-shadow), 0 0 0 9px rgba(255, 255, 255, 0); }
     100% { box-shadow: var(--card-shadow), 0 0 0 0 rgba(255, 255, 255, 0); }
   }
-
-  .card-left {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-    flex: 1;
-    padding-right: 8px;
+  @keyframes alarmPulse {
+    0%, 100% { filter: brightness(1); box-shadow: var(--card-shadow), 0 0 0 0 rgba(255, 71, 87, 0.0); }
+    50% { filter: brightness(1.18); box-shadow: var(--card-shadow), 0 0 0 6px rgba(255, 71, 87, 0.55); }
   }
+
+  .card-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .card-left { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; padding-right: 8px; }
   .timer-name {
-    font-family: inherit;
-    font-size: 23px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    color: #FFFFFF;
-    background: transparent;
-    border: none;
-    padding: 0;
-    margin: 0;
-    width: 100%;
-    outline: none;
-    line-height: 1.15;
+    font-family: inherit; font-size: 23px; font-weight: 700; letter-spacing: -0.5px;
+    color: #FFFFFF; background: transparent; border: none; padding: 0; margin: 0;
+    width: 100%; outline: none; line-height: 1.15;
   }
   .timer-name::placeholder { color: rgba(255, 255, 255, 0.55); }
+  .timer-name[readonly] { cursor: pointer; }
 
-  .timer-budget {
-    font-size: 14px;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.78);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
+  .timer-budget { font-size: 14px; font-weight: 500; color: rgba(255, 255, 255, 0.78); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .budget-input {
-    font-family: inherit;
-    width: 54px;
-    font-size: 14px;
-    font-weight: 700;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 8px;
-    padding: 3px 6px;
-    color: #FFFFFF;
-    text-align: center;
-    outline: none;
+    font-family: inherit; width: 54px; font-size: 14px; font-weight: 700;
+    background: rgba(0, 0, 0, 0.22); border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px; padding: 3px 6px; color: #FFFFFF; text-align: center; outline: none;
     transition: border-color 0.2s ease, background 0.2s ease;
   }
   .budget-input.pct { width: 46px; }
   .budget-input:focus { border-color: rgba(255,255,255,0.6); background: rgba(0,0,0,0.32); }
-
   .budget-tag {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    background: rgba(255, 255, 255, 0.16);
-    padding: 2px 7px;
-    border-radius: 6px;
-    color: #FFFFFF;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+    background: rgba(255, 255, 255, 0.16); padding: 2px 7px; border-radius: 6px; color: #FFFFFF;
   }
 
-  .card-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-    min-width: 124px;
-    flex-shrink: 0;
-  }
+  .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 124px; flex-shrink: 0; }
   .timer-time {
-    font-size: 44px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    letter-spacing: -1px;
-    color: #FFFFFF;
-    transition: color 0.4s ease;
+    font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums;
+    line-height: 1; letter-spacing: -1px; color: #FFFFFF; transition: color 0.4s ease;
   }
-  .timer-time.over  { color: var(--accent); }
-  .timer-time.near  { color: var(--status-amber); }
+  .timer-time.over { color: var(--accent); }
+  .timer-time.near { color: var(--status-amber); }
+  .time-caption { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 0 10px rgba(255, 255, 255, 0.9); transition: opacity 0.3s ease; }
 
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #FFFFFF;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
-    transition: opacity 0.3s ease;
+  /* ── Battery fill bar (signature for timer mode) ── */
+  .battery {
+    position: relative;
+    height: 12px; width: 100%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 7px; overflow: hidden;
   }
+  .battery-fill {
+    height: 100%; width: 0%;
+    background: var(--status-good);
+    border-radius: 6px;
+    transition: width 0.3s linear, background 0.3s ease;
+  }
+  .battery-fill.near { background: var(--status-amber); }
+  .battery-fill.over { background: var(--accent); }
+  .battery-fill.charging { background: var(--status-good); }
 
   .delete-btn {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    background: rgba(0, 0, 0, 0.22);
-    border: none;
-    color: rgba(255, 255, 255, 0.72);
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    padding: 0 0 2px 0;
+    position: absolute; top: 10px; right: 12px;
+    background: rgba(0, 0, 0, 0.22); border: none; color: rgba(255, 255, 255, 0.72);
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 18px; line-height: 1; padding: 0 0 2px 0;
     transition: background 0.2s ease, transform 0.15s ease, color 0.2s ease;
   }
   .delete-btn:hover { background: rgba(0, 0, 0, 0.4); color: #FFFFFF; }
   .delete-btn:active { transform: scale(0.9); }
 
-  /* ── Ledger (compact budget vs actual) ── */
-  .ledger {
-    margin: 4px 16px 124px;
-    padding: 14px 16px;
-    border-radius: 14px;
-    background: var(--input-bg);
-    border: var(--input-border);
-  }
-  .ledger-title {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
-    color: var(--text-secondary);
-    margin-bottom: 10px;
-  }
-  .ledger-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 6px 0;
-    font-size: 13px;
-    border-bottom: 1px solid var(--hairline);
-    font-variant-numeric: tabular-nums;
-  }
+  /* ── Ledger ── */
+  .ledger { margin: 4px 16px 0; padding: 14px 16px; border-radius: 14px; background: var(--input-bg); border: var(--input-border); }
+  .ledger-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-secondary); margin-bottom: 10px; }
+  .ledger-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
   .ledger-row:last-child { border-bottom: none; }
   .ledger-row .lr-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ledger-row .lr-name .lr-tag { color: var(--text-secondary); font-size: 11px; margin-left: 4px; }
@@ -490,115 +310,92 @@
 
   /* ── Bottom drawer + hold-to-reset pill ── */
   .bottom-drawer {
-    position: fixed;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 428px;
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 428px;
     background: var(--drawer-bg);
     border-radius: 20px 20px 0 0;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.2);
     padding: 22px 0 34px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 30;
-    transition: background 0.4s ease;
+    display: flex; justify-content: center; align-items: center;
+    z-index: 30; transition: background 0.4s ease;
   }
   .reset-pill {
-    position: relative;
-    border: none;
-    border-radius: 30px;
-    padding: 16px 40px;
-    background: var(--pill-bg);
-    color: var(--text-primary);
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    overflow: hidden;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    position: relative; border: none; border-radius: 30px;
+    padding: 16px 40px; background: var(--pill-bg); color: var(--text-primary);
+    font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer; overflow: hidden;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: none;
+    user-select: none; -webkit-user-select: none; touch-action: none;
     transition: transform 0.15s ease;
   }
   .reset-pill:active { transform: scale(0.96); }
   .reset-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .reset-fill {
-    position: absolute;
-    top: 0; left: 0;
-    height: 100%;
-    width: 0%;
-    background: var(--accent);
-    opacity: 0.9;
-    border-radius: 30px;
-    z-index: 0;
-    pointer-events: none;
-  }
+  .reset-fill { position: absolute; top: 0; left: 0; height: 100%; width: 0%; background: var(--accent); opacity: 0.9; border-radius: 30px; z-index: 0; pointer-events: none; }
   .reset-text { position: relative; z-index: 1; pointer-events: none; }
 
-  /* ── Undo toast ── */
+  /* ── Toast ── */
   .toast {
-    position: fixed;
-    bottom: 96px;
-    left: 50%;
+    position: fixed; bottom: 110px; left: 50%;
     transform: translateX(-50%) translateY(16px);
     background: var(--pill-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--hairline);
-    color: var(--text-primary);
-    padding: 12px 14px 12px 18px;
-    border-radius: 16px;
-    display: flex;
-    gap: 14px;
-    align-items: center;
-    opacity: 0;
-    pointer-events: none;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--hairline); color: var(--text-primary);
+    padding: 12px 14px 12px 18px; border-radius: 16px;
+    display: flex; gap: 14px; align-items: center;
+    opacity: 0; pointer-events: none;
     transition: opacity 0.25s, transform 0.25s;
-    z-index: 40;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-    max-width: 90vw;
+    z-index: 40; box-shadow: 0 10px 30px rgba(0,0,0,0.45); max-width: 90vw;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-  #toastUndo {
-    background: var(--accent);
-    border: none;
-    color: #FFFFFF;
-    padding: 7px 14px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-family: inherit;
-    font-weight: 700;
-    font-size: 13px;
+  .toast button {
+    background: var(--accent); border: none; color: #FFFFFF;
+    padding: 7px 14px; border-radius: 10px; cursor: pointer;
+    font-family: inherit; font-weight: 700; font-size: 13px;
   }
-  #toastUndo:active { transform: scale(0.94); }
+  .toast button:active { transform: scale(0.94); }
+  .toast button.hidden { display: none; }
   #toastLabel { font-size: 14px; font-weight: 500; }
 
+  /* ── RUN MODE: strip editing UI, leave slots + name + time remaining ── */
+  .app.mode-run .glass-panels { display: none; }
+  .app.mode-run .list-header { display: none; }
+  .app.mode-run .ledger { display: none; }
+  .app.mode-run .timer-budget { display: none; }
+  .app.mode-run .delete-btn { display: none; }
+  .app.mode-run .budget-input { display: none; }
+  .app.mode-run .timer-name { pointer-events: none; }
+  .app.mode-run .timer-name[readonly],
+  .app.mode-run .timer-name { background: transparent; }
+
   @media (prefers-reduced-motion: reduce) {
-    .timer-card.active { animation: none; }
+    .timer-card.active, .timer-card.alarm { animation: none; }
     *, *::after, *::before { transition-duration: 0.01ms !important; }
-    .reset-fill { transition: width 1.5s linear !important; } /* keep functional hold feedback */
+    .reset-fill { transition: width 1.5s linear !important; }
+    .battery-fill { transition: width 0.3s linear !important; }
   }
 </style>
 </head>
 <body data-theme="dark">
-<div class="app">
+<div class="app" id="app">
 
   <div class="sticky-head">
     <header class="top-banner">
+      <div class="head-btn-group left">
+        <button class="icon-btn" id="modeBtn" aria-label="Toggle run mode" title="Toggle run / edit">
+          <svg id="iconEdit" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          <svg id="iconRun" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+      </div>
       <h1>Time Budget</h1>
-      <button class="theme-btn" id="themeBtn" aria-label="Toggle theme">
-        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7a5 5 0 100 10 5 5 0 000-10zm0-5a1 1 0 011 1v2a1 1 0 11-2 0V3a1 1 0 011-1zm0 17a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zM5.64 6.05a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42L5.64 7.46a1 1 0 010-1.41zm12.02 12.02a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42l-1.41-1.42a1 1 0 010-1.41zM3 12a1 1 0 011-1h2a1 1 0 110 2H4a1 1 0 01-1-1zm17 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM6.05 18.36a1 1 0 010 1.41l-1.41 1.42a1 1 0 11-1.42-1.42l1.42-1.41a1 1 0 011.41 0zm12.02-12.02a1 1 0 010 1.41l-1.41 1.42a1 1 0 11-1.42-1.42l1.42-1.41a1 1 0 011.41 0z"/></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-      </button>
+      <div class="head-btn-group right">
+        <button class="icon-btn" id="paletteBtn" aria-label="Cycle color palette" title="Cycle palette">○</button>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7a5 5 0 100 10 5 5 0 000-10zm0-5a1 1 0 011 1v2a1 1 0 11-2 0V3a1 1 0 011-1zm0 17a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zM5.64 6.05a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42L5.64 7.46a1 1 0 010-1.41zm12.02 12.02a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42l-1.41-1.42a1 1 0 010-1.41zM3 12a1 1 0 011-1h2a1 1 0 110 2H4a1 1 0 01-1-1zm17 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM6.05 18.36a1 1 0 010 1.41l-1.41 1.42a1 1 0 11-1.42-1.42l1.42-1.41a1 1 0 011.41 0zm12.02-12.02a1 1 0 010 1.41l-1.41 1.42a1 1 0 11-1.42-1.42l1.42-1.41a1 1 0 011.41 0z"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+      </div>
     </header>
 
-    <!-- Budget Tape — signature -->
     <div class="tape-wrap">
       <div class="tape-meta">
         <span class="tape-label">Today's Tape</span>
@@ -608,24 +405,20 @@
     </div>
   </div>
 
-  <!-- Settings -->
   <section class="glass-panels">
     <div class="field">
       <label for="totalBank">Total Bank of Time (Hours)</label>
       <input id="totalBank" type="number" value="8" min="0" step="0.25" inputmode="decimal">
     </div>
-
     <label class="toggle-row" for="multitask">
       <span class="toggle-label">Allow overlapping timers (off = starting one stops the rest)</span>
       <input id="multitask" type="checkbox">
       <span class="toggle-switch"></span>
     </label>
-
     <div class="action-btns">
       <button id="addFixedBtn" class="text-btn" type="button">+ Add Fixed Block</button>
       <button id="addPercentBtn" class="text-btn" type="button">+ Add Percentage Category</button>
     </div>
-
     <p id="warning" class="warning-text">Total percentage exceeds 100%!</p>
   </section>
 
@@ -651,42 +444,50 @@
 
 <div class="toast" id="toast">
   <span id="toastLabel"></span>
-  <button id="toastUndo">Undo</button>
+  <button id="toastAction">Undo</button>
 </div>
 
 <script>
 "use strict";
 
-const STORAGE_KEY = "overlapBudgeter.v2";
+const STORAGE_KEY = "overlapBudgeter.v3";
 const THEME_KEY = "overlapBudgeter.theme";
 const HOLD_MS = 1500;
 
-// Cascade: deep navy → warm brown → lava, by index across the unified list.
-const C1 = [0x1A, 0x1F, 0x26];
-const C2 = [0x4A, 0x35, 0x2F];
-const C3 = [0xD3, 0x3C, 0x29];
+/* ── Preset cascade palettes (3-stop: deep → mid → accent) ── */
+const PALETTES = [
+  { name: "Lava",   stops: [[0x1A,0x1F,0x26],[0x4A,0x35,0x2F],[0xD3,0x3C,0x29]] },
+  { name: "Ocean",  stops: [[0x0B,0x1E,0x33],[0x0E,0x3B,0x4E],[0x00,0xB4,0xD8]] },
+  { name: "Forest", stops: [[0x10,0x24,0x1A],[0x2A,0x3D,0x20],[0x7C,0xB3,0x4A]] },
+  { name: "Sunset", stops: [[0x2A,0x1B,0x3D],[0x7B,0x2D,0x6E],[0xFF,0x7B,0x3D]] },
+  { name: "Berry",  stops: [[0x20,0x14,0x2A],[0x5A,0x1E,0x4A],[0xFF,0x3D,0x7A]] },
+  { name: "Mono",   stops: [[0x14,0x16,0x1A],[0x33,0x37,0x3E],[0x8A,0x90,0x99]] },
+];
+
 function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
 function interpolate(c1, c2, t) {
   return `rgb(${lerp(c1[0],c2[0],t)},${lerp(c1[1],c2[1],t)},${lerp(c1[2],c2[2],t)})`;
 }
 function cascadeColor(index, total) {
-  if (total <= 1) return 'rgb(26,31,38)';
+  if (total <= 1) return toRgb(PALETTES[state.paletteIdx].stops[0]);
+  const stops = PALETTES[state.paletteIdx].stops;
   const t = index / (total - 1);
-  return t < 0.5 ? interpolate(C1, C2, t * 2) : interpolate(C2, C3, (t - 0.5) * 2);
+  return t < 0.5 ? interpolate(stops[0], stops[1], t * 2) : interpolate(stops[1], stops[2], (t - 0.5) * 2);
 }
+function toRgb(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function nowMs() { return Date.now(); }
 
-// --- State ---  fixed: hard hours; percent: % of REMAINING (after fixed blocks)
-let state = { totalBank: 8, multitask: false, fixed: [], percent: [] };
+/* --- State --- fixed: hard hours; percent: % of remaining (after fixed blocks) */
+let state = { totalBank: 8, multitask: false, mode: "edit", paletteIdx: 0, fixed: [], percent: [] };
 let undoState = null, undoTimer = null;
 
-const rowEls = {};   // id -> { card, time, name, budgetSpan, budgetInput, dot }
-const segEls = {};   // id -> segment div
+const rowEls = {};
+const segEls = {};
 let freeSeg = null;
 
-// --- Persistence ---
+/* --- Persistence --- */
 function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
 function load() {
   try {
@@ -697,40 +498,43 @@ function load() {
       state = {
         totalBank: typeof s.totalBank === 'number' ? s.totalBank : 8,
         multitask: !!s.multitask,
-        fixed: Array.isArray(s.fixed) ? s.fixed : [],
-        percent: Array.isArray(s.percent) ? s.percent : [],
+        mode: (s.mode === 'run') ? 'run' : 'edit',
+        paletteIdx: Math.max(0, Math.min(PALETTES.length - 1, s.paletteIdx|0)),
+        fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
+        percent: Array.isArray(s.percent) ? s.percent.map(norm) : [],
       };
       return true;
     }
   } catch (e) {}
   return false;
 }
+function norm(b) { return { id: b.id || uid(), name: b.name || 'Task', hours: b.hours||0, percent: b.percent||0, banked: b.banked||0, startedAt: b.startedAt||null, alarmed: !!b.alarmed }; }
 function seedDefaults() {
   state.fixed = [
-    { id: uid(), name: 'Lunch',      hours: 1, banked: 0, startedAt: null },
-    { id: uid(), name: 'Deep Work',  hours: 3, banked: 0, startedAt: null },
+    { id: uid(), name: 'Lunch',     hours: 1, banked: 0, startedAt: null, alarmed: false },
+    { id: uid(), name: 'Deep Work', hours: 3, banked: 0, startedAt: null, alarmed: false },
   ];
   state.percent = [
-    { id: uid(), name: 'Admin', percent: 30, banked: 0, startedAt: null },
-    { id: uid(), name: 'Reading', percent: 20, banked: 0, startedAt: null },
+    { id: uid(), name: 'Admin',   percent: 30, banked: 0, startedAt: null, alarmed: false },
+    { id: uid(), name: 'Reading', percent: 20, banked: 0, startedAt: null, alarmed: false },
   ];
 }
 
-// --- Timing (timestamp-based: survives reload, background throttling, sleep) ---
-function elapsedOf(b) {
-  return b.banked + (b.startedAt ? Math.floor((nowMs() - b.startedAt) / 1000) : 0);
-}
+/* --- Timing (timestamp-based: survives reload, background throttling, sleep) --- */
+function elapsedOf(b) { return b.banked + (b.startedAt ? Math.floor((nowMs() - b.startedAt) / 1000) : 0); }
 function startBlock(b) {
   if (b.startedAt) return;
   if (!state.multitask) {
     [...state.fixed, ...state.percent].forEach(o => { if (o !== b && o.startedAt) stopBlock(o); });
   }
   b.startedAt = nowMs();
+  b.alarmed = false;
 }
 function stopBlock(b) {
   if (!b.startedAt) return;
   b.banked += Math.floor((nowMs() - b.startedAt) / 1000);
   b.startedAt = null;
+  b.alarmed = false;
 }
 function toggleBlock(listKey, id) {
   const b = state[listKey].find(x => x.id === id);
@@ -740,11 +544,9 @@ function toggleBlock(listKey, id) {
 }
 function isRunning(b) { return !!b.startedAt; }
 
-// --- Budget helpers ---
+/* --- Budget helpers --- */
 function budgetSecFixed(b) { return (b.hours || 0) * 3600; }
 function budgetSecPercent(b, remainingHours) { return remainingHours * (b.percent || 0) / 100 * 3600; }
-
-// ratio color class: on / near (>=85%) / over (>=100%)
 function ratioState(budgetSec, actualSec) {
   if (budgetSec <= 0) return actualSec > 0 ? 'over' : 'on';
   const r = actualSec / budgetSec;
@@ -759,11 +561,10 @@ function ratioBaseline(budgetSec, actualSec) {
   return { color: 'rgba(255,255,255,0.55)', pct: budgetSec > 0 ? Math.min(100, (actualSec / budgetSec) * 100) : 0 };
 }
 
-// --- Formatting ---
+/* --- Formatting --- */
 function formatHumanTime(totalSeconds) {
   if (totalSeconds <= 0) return "0 mins";
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
+  const h = Math.floor(totalSeconds / 3600), m = Math.floor((totalSeconds % 3600) / 60);
   const out = [];
   if (h > 0) out.push(`${h} hour${h > 1 ? 's' : ''}`);
   if (m > 0) out.push(`${m} min${m > 1 ? 's' : ''}`);
@@ -771,8 +572,7 @@ function formatHumanTime(totalSeconds) {
 }
 function formatCompact(totalSeconds) {
   totalSeconds = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
+  const h = Math.floor(totalSeconds / 3600), m = Math.floor((totalSeconds % 3600) / 60);
   if (h > 0 && m > 0) return `${h}h ${m}m`;
   if (h > 0) return `${h}h`;
   if (m > 0) return `${m}m`;
@@ -780,63 +580,52 @@ function formatCompact(totalSeconds) {
 }
 function formatDigital(seconds) {
   seconds = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 function formatHours(h) { return (Math.round(h * 10) / 10).toFixed(1); }
 function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, c => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-  }[c]));
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// --- Add / remove (with undo) ---
+/* --- Add / remove (with undo) --- */
 function addFixed() {
-  const b = { id: uid(), name: 'New Block', hours: 1, banked: 0, startedAt: null };
-  state.fixed.push(b);
-  save(); renderStructure(); focusName(b.id);
+  const b = { id: uid(), name: 'New Block', hours: 1, banked: 0, startedAt: null, alarmed: false };
+  state.fixed.push(b); save(); renderStructure(); focusName(b.id);
 }
 function addPercent() {
-  const b = { id: uid(), name: 'New Category', percent: 20, banked: 0, startedAt: null };
-  state.percent.push(b);
-  save(); renderStructure(); focusName(b.id);
+  const b = { id: uid(), name: 'New Category', percent: 20, banked: 0, startedAt: null, alarmed: false };
+  state.percent.push(b); save(); renderStructure(); focusName(b.id);
 }
 function removeBlock(listKey, id) {
-  const list = state[listKey];
-  const idx = list.findIndex(x => x.id === id);
+  const list = state[listKey], idx = list.findIndex(x => x.id === id);
   if (idx < 0) return;
   const block = list[idx];
-  stopBlock(block);              // bank running time so undo preserves it
+  stopBlock(block);
   list.splice(idx, 1);
   save(); renderStructure();
   showUndo(listKey, idx, block);
 }
 function showUndo(listKey, idx, block) {
   undoState = { listKey, idx, block };
-  document.getElementById('toastLabel').textContent = `Removed “${block.name}”`;
-  document.getElementById('toast').classList.add('show');
+  showToast(`Removed “${block.name}”`, { action: 'Undo' });
   clearTimeout(undoTimer);
-  undoTimer = setTimeout(() => { undoState = null; document.getElementById('toast').classList.remove('show'); }, 6000);
+  undoTimer = setTimeout(() => { undoState = null; hideToast(); }, 6000);
 }
 function doUndo() {
   if (!undoState) return;
   const { listKey, idx, block } = undoState;
   state[listKey].splice(idx, 0, block);
-  undoState = null;
-  clearTimeout(undoTimer);
-  document.getElementById('toast').classList.remove('show');
+  undoState = null; clearTimeout(undoTimer); hideToast();
   save(); renderStructure();
 }
 function focusName(id) {
   const card = document.querySelector(`.timer-card[data-id="${id}"]`);
-  if (card) { const inp = card.querySelector('.timer-name'); if (inp) inp.focus(); }
+  if (card && state.mode === 'edit') { const inp = card.querySelector('.timer-name'); if (inp) inp.focus(); }
 }
 
-// --- Unified list rendering ---
+/* --- Unified list rendering --- */
 function allBlocks() {
-  // Render order: fixed first, then percent. Cascade runs across the union.
   return [
     ...state.fixed.map(b => ({ b, listKey: 'fixed', isPercent: false })),
     ...state.percent.map(b => ({ b, listKey: 'percent', isPercent: true })),
@@ -846,13 +635,12 @@ function allBlocks() {
 function buildCard(entry, index, total) {
   const { b, listKey, isPercent } = entry;
   const card = document.createElement('div');
-  card.className = 'timer-card' + (isRunning(b) ? ' active' : '');
+  card.className = 'timer-card' + (isRunning(b) ? ' active' : '') + (b.alarmed ? ' alarm' : '');
   card.dataset.id = b.id;
   card.dataset.listKey = listKey;
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
   card.setAttribute('aria-pressed', isRunning(b) ? 'true' : 'false');
-  card.setAttribute('aria-label', `${b.name}: ${isRunning(b) ? 'running, click to pause' : 'paused, click to start'}`);
   card.style.backgroundColor = cascadeColor(index, total);
 
   const budgetLine = isPercent
@@ -860,20 +648,23 @@ function buildCard(entry, index, total) {
     : `Budget: <input class="budget-input no-toggle" type="number" min="0" step="0.25" value="${b.hours}" inputmode="decimal">h <span class="budget-tag">fixed</span>`;
 
   card.innerHTML = `
-    <div class="card-left">
-      <input class="timer-name no-toggle" type="text" value="${escapeHtml(b.name)}" placeholder="Task name" autocomplete="off">
-      <div class="timer-budget">${budgetLine}</div>
+    <div class="card-row">
+      <div class="card-left">
+        <input class="timer-name no-toggle" type="text" value="${escapeHtml(b.name)}" placeholder="Task name" autocomplete="off" ${state.mode==='run'?'readonly':''}>
+        <div class="timer-budget">${budgetLine}</div>
+      </div>
+      <div class="card-right">
+        <div class="timer-time" data-id="${b.id}">${formatDigital(elapsedOf(b))}</div>
+        <div class="time-caption"></div>
+        <div class="status-dot"></div>
+      </div>
     </div>
-    <div class="card-right">
-      <div class="timer-time" data-id="${b.id}">${formatDigital(elapsedOf(b))}</div>
-      <div class="status-dot"></div>
-    </div>
+    <div class="battery" aria-hidden="true"><div class="battery-fill"></div></div>
     <button class="delete-btn no-toggle" type="button" aria-label="Delete ${escapeHtml(b.name)}">×</button>
   `;
 
-  // Toggle timer when the card itself is tapped (not inputs / delete).
   card.addEventListener('click', (e) => {
-    if (e.target.closest('.no-toggle')) return;
+    if (e.target.closest('.no-toggle') && state.mode === 'edit') return;
     toggleBlock(listKey, b.id);
   });
 
@@ -881,21 +672,16 @@ function buildCard(entry, index, total) {
   nameInput.addEventListener('input', () => { b.name = nameInput.value; save(); });
 
   const valueInput = card.querySelector('.budget-input');
-  valueInput.addEventListener('input', () => {
+  if (valueInput) valueInput.addEventListener('input', () => {
     let v = parseFloat(valueInput.value);
     if (!Number.isFinite(v) || v < 0) v = 0;
-    if (isPercent) {
-      if (v > 100) v = 100;
-      b.percent = v;
-    } else {
-      b.hours = v;
-    }
+    if (isPercent) { if (v > 100) v = 100; b.percent = v; } else { b.hours = v; }
+    b.alarmed = false;
     save(); updateLive();
   });
 
   card.querySelector('.delete-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    removeBlock(listKey, b.id);
+    e.stopPropagation(); removeBlock(listKey, b.id);
   });
 
   return card;
@@ -904,8 +690,7 @@ function buildCard(entry, index, total) {
 function renderStructure() {
   const list = document.getElementById('timerList');
   const viz = document.getElementById('visualizer');
-  list.innerHTML = '';
-  viz.innerHTML = '';
+  list.innerHTML = ''; viz.innerHTML = '';
   for (const k in rowEls) delete rowEls[k];
   for (const k in segEls) delete segEls[k];
 
@@ -913,7 +698,9 @@ function renderStructure() {
   const total = entries.length;
 
   if (total === 0) {
-    list.innerHTML = '<div class="empty-state">Tap “+ Add Fixed Block” or “+ Add Percentage Category” to build your day.</div>';
+    list.innerHTML = state.mode === 'run'
+      ? '<div class="empty-state">No timers yet. Switch to Edit mode to build your day.</div>'
+      : '<div class="empty-state">Tap “+ Add Fixed Block” or “+ Add Percentage Category” to build your day.</div>';
   } else {
     entries.forEach((entry, index) => {
       const card = buildCard(entry, index, total);
@@ -921,7 +708,9 @@ function renderStructure() {
       rowEls[entry.b.id] = {
         card,
         time: card.querySelector('.timer-time'),
+        caption: card.querySelector('.time-caption'),
         budgetSpan: card.querySelector('.budget-hours'),
+        battery: card.querySelector('.battery-fill'),
       };
       const seg = document.createElement('div');
       seg.className = 'segment';
@@ -946,15 +735,35 @@ function updateCard(entry, remainingHours) {
   const sec = elapsedOf(b);
   const running = isRunning(b);
   const budget = isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b);
-  e.time.textContent = formatDigital(sec);
   const st = ratioState(budget, sec);
+  const runMode = state.mode === 'run';
+
+  // Big display: elapsed in edit mode, remaining in run mode
+  const shown = runMode ? Math.max(0, budget - sec) : sec;
+  e.time.textContent = formatDigital(shown);
   e.time.classList.toggle('over', st === 'over');
   e.time.classList.toggle('near', st === 'near');
+  if (e.caption) e.caption.textContent = runMode ? (st === 'over' ? 'over by' : 'left') : 'elapsed';
+
   e.card.classList.toggle('active', running);
+  e.card.classList.toggle('alarm', !!b.alarmed);
   e.card.setAttribute('aria-pressed', running ? 'true' : 'false');
   e.card.setAttribute('aria-label', `${b.name}: ${running ? 'running, click to pause' : 'paused, click to start'}`);
-  if (isPercent && e.budgetSpan) {
-    e.budgetSpan.textContent = formatHours(budget / 3600) + 'h';
+  if (isPercent && e.budgetSpan) e.budgetSpan.textContent = formatHours(budget / 3600) + 'h';
+
+  // Battery fill: ratio of elapsed to budget
+  if (e.battery) {
+    const pct = budget > 0 ? Math.min(100, (sec / budget) * 100) : 0;
+    e.battery.style.width = pct + '%';
+    e.battery.classList.toggle('near', st === 'near');
+    e.battery.classList.toggle('over', st === 'over');
+    e.battery.classList.toggle('charging', running && st === 'on');
+  }
+
+  // Alarm: crossed 100% while running, fires once
+  if (running && budget > 0 && sec >= budget && !b.alarmed) {
+    b.alarmed = true;
+    triggerAlarm(b);
   }
 }
 
@@ -964,18 +773,15 @@ function recalc() {
   const remaining = Math.max(0, bank - totalFixed);
   let totalPercent = state.percent.reduce((s, b) => s + (b.percent || 0), 0);
 
-  document.getElementById('remainingCaption').textContent =
-    remaining > 0 ? formatHumanTime(remaining * 3600) + ' left after fixed' : 'no time left after fixed';
+  const remCap = document.getElementById('remainingCaption');
+  if (remCap) remCap.textContent = remaining > 0 ? formatHumanTime(remaining * 3600) + ' left after fixed' : 'no time left after fixed';
 
-  // Tape segments: identity fill + status baseline (via ::after custom props).
-  allBlocks().forEach((entry, index) => {
+  allBlocks().forEach((entry) => {
     const { b, isPercent } = entry;
     const seg = segEls[b.id]; if (!seg) return;
     const budget = isPercent ? budgetSecPercent(b, remaining) : budgetSecFixed(b);
     const sec = elapsedOf(b);
-    const w = bank > 0
-      ? (isPercent ? (b.percent / 100) * (remaining / bank) * 100 : (b.hours / bank) * 100)
-      : 0;
+    const w = bank > 0 ? (isPercent ? (b.percent / 100) * (remaining / bank) * 100 : (b.hours / bank) * 100) : 0;
     seg.style.width = w + '%';
     const bl = ratioBaseline(budget, sec);
     seg.style.setProperty('--bl-pct', bl.pct + '%');
@@ -983,10 +789,11 @@ function recalc() {
     seg.title = `${b.name}: ${formatHumanTime(budget)} budget · ${formatHumanTime(sec)} actual`;
   });
 
-  // Free / unallocated slack
   const freeHours = remaining - remaining * (Math.min(totalPercent, 100) / 100);
-  freeSeg.style.width = (bank > 0 ? Math.max(0, freeHours / bank) * 100 : 0) + '%';
-  freeSeg.title = 'Unallocated: ' + formatHumanTime(freeHours * 3600);
+  if (freeSeg) {
+    freeSeg.style.width = (bank > 0 ? Math.max(0, freeHours / bank) * 100 : 0) + '%';
+    freeSeg.title = 'Unallocated: ' + formatHumanTime(freeHours * 3600);
+  }
   document.getElementById('tapeCaption').textContent =
     formatHumanTime(remaining * 3600) + ' to split · ' + formatHumanTime(freeHours * 3600) + ' free';
 
@@ -1000,24 +807,21 @@ function updateLive() {
   allBlocks().forEach(entry => updateCard(entry, remaining));
 }
 
-// --- Ledger (budget vs actual + free) ---
+/* --- Ledger --- */
 function buildLedger(bank, remaining, totalPercent) {
   const list = document.getElementById('resultsList');
   const sig = state.fixed.map(b => b.id).join(',') + '|' + state.percent.map(b => b.id).join(',');
   if (list.dataset.sig !== sig) {
-    list.dataset.sig = sig;
-    list.innerHTML = '';
+    list.dataset.sig = sig; list.innerHTML = '';
     state.fixed.forEach(b => {
       const row = document.createElement('div');
-      row.className = 'ledger-row';
-      row.dataset.id = b.id;
+      row.className = 'ledger-row'; row.dataset.id = b.id;
       row.innerHTML = `<span class="lr-name">${escapeHtml(b.name)}<span class="lr-tag">fixed</span></span><span class="lr-vals"><span class="lr-budget">—</span> · <span class="lr-actual">—</span></span>`;
       list.appendChild(row);
     });
     state.percent.forEach(b => {
       const row = document.createElement('div');
-      row.className = 'ledger-row';
-      row.dataset.id = b.id;
+      row.className = 'ledger-row'; row.dataset.id = b.id;
       row.innerHTML = `<span class="lr-name">${escapeHtml(b.name)}<span class="lr-tag">${b.percent}%</span></span><span class="lr-vals"><span class="lr-budget">—</span> · <span class="lr-actual">—</span></span>`;
       list.appendChild(row);
     });
@@ -1048,20 +852,70 @@ function buildLedger(bank, remaining, totalPercent) {
   }
 }
 
-// --- Reset the day: zero time, keep structure ---
+/* --- Reset the day --- */
 function resetDay() {
-  [...state.fixed, ...state.percent].forEach(b => { b.banked = 0; b.startedAt = null; });
+  [...state.fixed, ...state.percent].forEach(b => { b.banked = 0; b.startedAt = null; b.alarmed = false; });
   save(); renderStructure();
 }
 
-// --- Hold-to-reset pill (the hold IS the confirmation) ---
-let holding = false, fired = false, holdTimer = null;
+/* --- Alarm --- */
+let audioCtx = null;
+function ensureAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+function beep(freq, dur, gain) {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq; g.gain.value = gain;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t = audioCtx.currentTime;
+    o.start(t);
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.stop(t + dur);
+  } catch (e) {}
+}
+function alarmSound() {
+  ensureAudio();
+  beep(880, 0.22, 0.18);
+  setTimeout(() => beep(660, 0.22, 0.18), 260);
+  setTimeout(() => beep(990, 0.30, 0.18), 520);
+}
+function triggerAlarm(b) {
+  alarmSound();
+  showToast(`⏰ Time’s up: ${b.name} — tap card to stop`, { action: null });
+  save();
+}
+
+/* --- Toast --- */
+const toastEl = document.getElementById('toast');
+const toastLabel = document.getElementById('toastLabel');
+const toastAction = document.getElementById('toastAction');
+let toastTimer = null;
+function showToast(label, opts) {
+  opts = opts || {};
+  toastLabel.textContent = label;
+  if (opts.action) { toastAction.textContent = opts.action; toastAction.classList.remove('hidden'); }
+  else toastAction.classList.add('hidden');
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  if (!opts.sticky) toastTimer = setTimeout(hideToast, opts.ms || 4000);
+}
+function hideToast() { toastEl.classList.remove('show'); clearTimeout(toastTimer); }
+toastAction.addEventListener('click', () => { if (undoState) doUndo(); else hideToast(); });
+
+/* --- Hold-to-reset pill --- */
+let holding = false, fired = false;
 const resetPill = document.getElementById('resetPill');
 const resetFill = resetPill.querySelector('.reset-fill');
 const resetText = resetPill.querySelector('.reset-text');
-
 function beginHold(e) {
   if (e) e.preventDefault();
+  ensureAudio();
   if (holding || fired) return;
   holding = true;
   resetFill.style.transition = `width ${HOLD_MS}ms linear`;
@@ -1070,7 +924,6 @@ function beginHold(e) {
 function cancelHold() {
   if (fired) return;
   holding = false;
-  clearTimeout(holdTimer);
   resetFill.style.transition = 'width 0.2s ease';
   resetFill.style.width = '0%';
 }
@@ -1090,23 +943,53 @@ resetPill.addEventListener('contextmenu', e => e.preventDefault());
 resetFill.addEventListener('transitionend', (e) => {
   if (e.propertyName === 'width' && holding && resetFill.style.width === '100%') finishHold();
 });
-// Keyboard: hold Enter/Space to confirm.
 resetPill.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginHold(); } });
 resetPill.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cancelHold(); } });
 resetPill.addEventListener('blur', cancelHold);
 
-// --- Theme ---
+/* --- Theme --- */
 function applyTheme(t) { document.body.dataset.theme = t; }
 function toggleTheme() {
   const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
   applyTheme(next);
   try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
-  // re-render so tape segment baselines refresh with new theme vars
   renderStructure();
 }
 document.getElementById('themeBtn').addEventListener('click', toggleTheme);
 
-// --- Init ---
+/* --- Palette cycle --- */
+function applyPalette() {
+  document.getElementById('paletteBtn').textContent =
+    (state.paletteIdx + 1) + '/' + PALETTES.length;
+  document.getElementById('paletteBtn').title = 'Palette: ' + PALETTES[state.paletteIdx].name + ' (tap to cycle)';
+}
+function cyclePalette() {
+  state.paletteIdx = (state.paletteIdx + 1) % PALETTES.length;
+  applyPalette(); save(); renderStructure();
+  showToast('Palette: ' + PALETTES[state.paletteIdx].name, { action: null, ms: 1400 });
+}
+document.getElementById('paletteBtn').addEventListener('click', cyclePalette);
+
+/* --- Mode toggle (Edit ⇄ Run) --- */
+function applyMode() {
+  const app = document.getElementById('app');
+  app.classList.toggle('mode-run', state.mode === 'run');
+  document.getElementById('iconEdit').style.display = state.mode === 'run' ? 'none' : '';
+  document.getElementById('iconRun').style.display = state.mode === 'run' ? '' : 'none';
+  document.getElementById('modeBtn').setAttribute('aria-label', state.mode === 'run' ? 'Switch to edit mode' : 'Switch to run mode');
+  document.querySelectorAll('.timer-name').forEach(n => n.readOnly = (state.mode === 'run'));
+}
+function toggleMode() {
+  state.mode = state.mode === 'run' ? 'edit' : 'run';
+  if (state.mode === 'run') {
+    // Stop editing focus
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+  save(); applyMode(); renderStructure();
+}
+document.getElementById('modeBtn').addEventListener('click', toggleMode);
+
+/* --- Init --- */
 function init() {
   try {
     const savedTheme = localStorage.getItem(THEME_KEY);
@@ -1114,13 +997,12 @@ function init() {
   } catch (e) {}
 
   if (!load()) seedDefaults();
+  applyPalette();
+  applyMode();
 
   const bankInput = document.getElementById('totalBank');
   bankInput.value = state.totalBank;
-  bankInput.addEventListener('input', () => {
-    state.totalBank = parseFloat(bankInput.value) || 0;
-    save(); updateLive();
-  });
+  bankInput.addEventListener('input', () => { state.totalBank = parseFloat(bankInput.value) || 0; save(); updateLive(); });
 
   const mt = document.getElementById('multitask');
   mt.checked = state.multitask;
@@ -1128,9 +1010,7 @@ function init() {
 
   document.getElementById('addFixedBtn').addEventListener('click', addFixed);
   document.getElementById('addPercentBtn').addEventListener('click', addPercent);
-  document.getElementById('toastUndo').addEventListener('click', doUndo);
 
-  // Keyboard: Space toggles a focused card's timer; Ctrl/Cmd+Z undoes a remove.
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       if (undoState) { e.preventDefault(); doUndo(); }
@@ -1146,7 +1026,6 @@ function init() {
   setInterval(updateLive, 500);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) updateLive(); });
 }
-
 init();
 </script>
 </body>
