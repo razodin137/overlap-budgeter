@@ -37,10 +37,8 @@
         return len > 0 ? Math.max(0, Math.min(100, (nowMin() - wake) / len * 100)) : 0;
     }
 
-    /* ── Per-block accent colors. Harmonized warm ramp (cream/gold/amber + two
-       cool light steels + lava) so the identity color sits inside the navy→lava
-       cascade instead of fighting it. White-on-dark reads at every step. ── */
-    const PALETTE = ['#F4E4C1', '#E9B872', '#F2C879', '#D98E48', '#E89B5B', '#C9D6DF', '#9DB4C0', '#D33C29'];
+    /* ── One fixed color set. Each row gets its own color by index, in creation order. ── */
+    const PALETTE = ['#ef476f', '#11f1f7', '#bc8efc', '#fb8500', '#8338ec', '#f72585', '#3a0ca3'];
     let colorIdx = 0;
     function pickColor() { return PALETTE[colorIdx++ % PALETTE.length]; }
 
@@ -377,18 +375,13 @@
             time.addEventListener('input', () => updateField(listKey, b.id, 'time', time.value));
         }
 
-        // Left column: task title + allocated-budget subtitle.
-        const cardLeft = document.createElement('div');
-        cardLeft.className = 'card-left';
-        // Right column: live elapsed timer.
         const disp = document.createElement('div');
         disp.className = 'timer-display';
         const dispElapsed = document.createElement('div');
         dispElapsed.className = 'td-elapsed';
         const dispBudget = document.createElement('div');
         dispBudget.className = 'td-budget';
-        disp.append(dispElapsed);
-        cardLeft.append(name, dispBudget);
+        disp.append(dispElapsed, dispBudget);
 
         const btn = document.createElement('button');
         btn.className = 'btn-timer';
@@ -440,8 +433,8 @@
         fill.className = 'progress-fill';
         progress.appendChild(fill);
 
-        row.append(cardLeft, num, disp, btn, rm, chev, progress);
-        if (time) row.insertBefore(time, num);   // fixed rows: cardLeft | time | hrs | …
+        row.append(name, num, disp, btn, rm, chev, progress);
+        if (time) row.insertBefore(time, num);   // fixed rows: name | time | hrs | …
         if (doneBtn) row.insertBefore(doneBtn, rm);   // … start/stop | Done | remove
 
         // Run mode: tap the whole row to start/stop. (Edit mode uses the button.)
@@ -536,10 +529,9 @@
         const shown = runMode ? Math.max(0, budget - secAgainst) : sec;
         e.timerElapsed.textContent = formatDigitalTime(shown);
         const done = !!b.done;
-        // Allocated-budget subtitle, e.g. "Budget 4.0h (20%)" / "Budget 1.0h".
-        const budgetLabel = 'Budget ' + (budget / 3600).toFixed(1) + 'h'
-            + (isPercent ? ' (' + b.percent + '%)' : '');
-        e.timerBudget.textContent = done ? budgetLabel + ' · done' : budgetLabel;
+        e.timerBudget.textContent = runMode
+            ? (running ? 'left' : (done ? 'done' : ''))
+            : (done ? 'done · ' + formatCompact(sec) : 'of ' + formatCompact(budget));
         e.timerElapsed.style.color = displayColor(b, budget, secAgainst);
         e.row.classList.toggle('active', running);
         e.row.classList.toggle('done', done);
@@ -995,7 +987,7 @@
     }
 
     // --- Hold-to-confirm modal ---
-    const HOLD_MS = 1500;
+    const HOLD_MS = 1300;
     let holding = false;
     let completed = false;
     let holdTimer = null;

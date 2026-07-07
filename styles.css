@@ -1,965 +1,666 @@
-/* =====================================================================
-   OVERLAP TIME BUDGETER — "Midnight & Lava"
-   Mobile-first. 428px stage. Sticky top banner + fixed bottom drawer.
-   Pure-CSS navy→lava cascade on .category-row via :nth-child.
-   System fonts. tabular-nums on every live timer so layout never jumps.
-   ===================================================================== */
-
 :root {
-    /* Cascade anchors (the visual hook) */
-    --navy:   #1A1F26;   /* cascade top — deep cold navy            */
-    --brown:  #4A352F;   /* cascade middle — warm transition        */
-    --lava:   #D33C29;   /* cascade bottom / signature accent       */
-    --lava-dk:#8F3A2A;
+            --bg-color: #0a0a0a;
+            --card-bg: #161616;
+            --accent-color: #ffffff;
+            --text-dim: #a0a0a0;
+            --primary-highlight: #3a86ff;
+            --danger: #ff4d4d;
+            --warn: #ffd166;
+            --success: #06d6a0;
+            --border-color: #222;
+        }
 
-    /* Surfaces */
-    --bg-outside: #07090C;          /* desktop neutral around container */
-    --bg-app:     #0B0E12;          /* container base                    */
-    --glass:        rgba(255,255,255,0.05);
-    --glass-strong: rgba(28,38,51,0.95);   /* brief's reset-pill glass */
-    --glass-border: rgba(255,255,255,0.10);
-    --hairline:     rgba(255,255,255,0.06);
-    --track:        rgba(255,255,255,0.06);
+        body {
+            background-color: var(--bg-color);
+            color: var(--accent-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 40px 20px;
+        }
 
-    /* Text (high-contrast white mandatory on the cascade) */
-    --text:       #FFFFFF;
-    --text-dim:   rgba(255,255,255,0.62);
-    --text-faint: rgba(255,255,255,0.40);
+        .app-container {
+            width: 100%;
+            max-width: 600px;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 40px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid var(--border-color);
+        }
 
-    /* Semantics */
-    --success: #06D6A0;
-    --warn:    #FFD166;
-    --danger:  #FF4D4D;
-    --now:     #06D6A0;   /* NOW marker stays green = "present" */
+        /* Title row: h1 + header action buttons (zen / now / mode) */
+        .title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 2rem;
+        }
+        h1 {
+            font-weight: 600;
+            font-size: 1.5rem;
+            letter-spacing: -0.5px;
+            margin: 0;
+            text-align: center;
+            text-transform: uppercase;
+        }
+        .header-actions { display: flex; gap: 8px; }
+        .hdr-btn {
+            background: #222; border: 1px solid #333; color: #ddd;
+            padding: 7px 12px; border-radius: 10px; cursor: pointer;
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+            transition: background .2s, color .2s, border-color .2s, transform .12s;
+        }
+        .hdr-btn:hover { border-color: var(--primary-highlight); color: #fff; }
+        .hdr-btn:active { transform: scale(0.96); }
+        .hdr-btn:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
 
-    --banner: #94A0B3;
+        .section-label {
+            color: var(--text-dim);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            margin: 32px 0 14px 0;
+            letter-spacing: 1px;
+            display: block;
+            border-bottom: 1px solid #3a3a3a;
+            padding-bottom: 5px;
+        }
 
-    /* Type */
-    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', Roboto, Helvetica, Arial, sans-serif;
+        .input-group { margin-bottom: 28px; }
 
-    /* Radii / shadows / motion */
-    --r-card: 18px;
-    --r-pill: 30px;
-    --r-input: 12px;
-    --shadow-card: 0 4px 6px rgba(0,0,0,0.05);
-    --shadow-pill: 0 4px 16px rgba(0,0,0,0.5);
-    --ease: 0.3s ease;
-}
+        /* Day window: wake / bed time inputs + derived day-length readout */
+        .day-window-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .time-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-width: 110px;
+        }
+        .time-field-label {
+            color: var(--text-dim);
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .day-length {
+            color: var(--success);
+            font-size: 0.78rem;
+            font-weight: 600;
+            white-space: nowrap;
+            margin-left: auto;
+            align-self: flex-end;
+            padding-bottom: 12px;
+        }
+        input[type="time"] {
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            color: white;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 1rem;
+            box-sizing: border-box;
+            outline: none;
+            transition: border 0.3s;
+            color-scheme: dark;
+        }
+        input[type="time"]:focus { border-color: var(--primary-highlight); }
 
-* { box-sizing: border-box; }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            color: white;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 1rem;
+            box-sizing: border-box;
+            outline: none;
+            transition: border 0.3s;
+        }
+        input:focus { border-color: var(--primary-highlight); }
 
-html, body { margin: 0; padding: 0; min-height: 100%; }
+        /* Multitask toggle */
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: -8px 0 6px 2px;
+        }
+        .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .track {
+            position: absolute; inset: 0; cursor: pointer;
+            background: #333; border-radius: 22px; transition: background .25s;
+        }
+        .switch .track::before {
+            content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px;
+            background: #aaa; border-radius: 50%; transition: transform .25s, background .25s;
+        }
+        .switch input:checked + .track { background: var(--primary-highlight); }
+        .switch input:checked + .track::before { transform: translateX(16px); background: #fff; }
+        .toggle-label { color: var(--text-dim); font-size: 0.78rem; }
 
-body {
-    background: var(--bg-outside);
-    background-image: radial-gradient(90% 70% at 50% -10%, #10141B 0%, var(--bg-outside) 65%);
-    background-attachment: fixed;
-    color: var(--text);
-    font-family: var(--font);
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-}
+        /* ROW STYLES */
+        .category-row {
+            display: grid;
+            grid-template-columns: 1.6fr 0.9fr 1.35fr 84px 40px;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 15px;
+            background: #1c1c1c;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid transparent;
+            border-left: 3px solid #3a3a3a;
+        }
+        .category-row.is-percent { border-left: 3px dashed #2a2a2a; }
+        /* Fixed rows carry an extra start-time input and a Done button: name | time |
+           hrs | display | start/stop | Done | remove. */
+        .category-row.is-fixed { grid-template-columns: 1.1fr 0.85fr 0.5fr 0.85fr 56px 54px 28px; }
+        .category-row.done { opacity: 0.62; }
+        .segment.done { opacity: 0.5; }
+        .category-row.active { background: #222; }
+        .category-row.alarm { animation: alarmPulse 0.9s infinite; }
 
-/* ── App stage: 428px full-bleed dark column ────────────────────────── */
-.app-container {
-    position: relative;
-    width: 100%;
-    max-width: 428px;
-    min-height: 100vh;
-    background: var(--bg-app);
-    padding: 0 16px 120px;          /* bottom room for the fixed drawer */
-    box-shadow: 0 0 80px rgba(0,0,0,0.6);
-}
+        @keyframes alarmPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,77,0); }
+            50% { box-shadow: 0 0 0 4px rgba(255,77,77,0.55); border-left-color: var(--danger); }
+        }
 
-/* =====================================================================
-   STICKY TOP BANNER — "Time Budget" (#94A0B3, blur 10px, z 20)
-   Actions absolutely positioned so the title stays dead-center.
-   ===================================================================== */
-.title-row {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    margin: 0 -16px;                 /* bleed past the container's 16px pad */
-    padding: 14px 16px;
-    background: var(--banner);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(0,0,0,0.18);
-    text-align: center;
-}
-.title-row h1 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.35);
-}
-.header-actions {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    gap: 6px;
-}
-.hdr-btn {
-    background: rgba(20,24,30,0.55);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.18);
-    color: #fff;
-    padding: 7px 11px;
-    border-radius: 999px;
-    cursor: pointer;
-    font-family: var(--font);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    transition: background var(--ease), color var(--ease), border-color var(--ease), transform 0.12s ease;
-}
-.hdr-btn:hover { border-color: rgba(255,255,255,0.45); }
-.hdr-btn:active { transform: scale(0.96); }
-.hdr-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.hdr-btn.active { background: var(--lava); border-color: var(--lava); color: #fff; }
-#nowBtn.active { background: var(--now); color: #06231a; border-color: var(--now); }
+        /* Per-row progress bar: the fill IS the block's own color and grows with elapsed time.
+           The unfilled track is a faded tint of that same color. */
+        .progress {
+            grid-column: 1 / -1;
+            height: 8px;
+            margin-top: 10px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.06);
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 6px;
+            transition: width 0.3s linear, background-color 0.3s ease;
+        }
 
-/* =====================================================================
-   SECTION LABELS / CAPTIONS / WARNING
-   ===================================================================== */
-.section-label {
-    display: block;
-    margin: 28px 0 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--hairline);
-    color: var(--text-dim);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1.4px;
-    text-transform: uppercase;
-}
-.section-caption { color: var(--text-faint); font-size: 12px; margin: -4px 0 12px 2px; }
-.viz-caption     { color: var(--text-faint); font-size: 12px; margin-top: 10px; }
-.total-warning {
-    color: var(--danger);
-    font-size: 13px;
-    text-align: center;
-    margin-top: 12px;
-    display: none;
-}
+        .timer-display {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            text-align: right;
+            line-height: 1.15;
+        }
+        .td-elapsed {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            color: var(--primary-highlight);
+            transition: color 0.4s ease, opacity 0.25s ease;
+        }
+        .td-budget {
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            margin-top: 1px;
+        }
+        .category-row:not(.active) .td-elapsed { opacity: 0.5; }
+        .category-row.active .td-elapsed { font-weight: 700; }
 
-/* =====================================================================
-   GLASS PANEL — day window + multitask toggle
-   ===================================================================== */
-.input-group {
-    margin: 16px 0 8px;
-    padding: 16px;
-    background: var(--glass);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--r-card);
-    box-shadow: var(--shadow-card);
-}
-.input-group .section-label { margin: 0 0 12px; border-bottom: none; padding-bottom: 0; }
+        .btn-timer {
+            background: #333;
+            border: none;
+            color: white;
+            min-height: 44px;
+            padding: 10px 6px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: background 0.25s, color 0.25s;
+        }
+        .btn-timer.running { background: var(--accent-color); color: #111; }
 
-.day-window-row {
-    display: flex;
-    align-items: flex-end;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-.time-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 110px; }
-.time-field-label {
-    color: var(--text-faint);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-}
-.day-length {
-    color: var(--success);
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-    margin-left: auto;
-    align-self: center;
-    letter-spacing: 0.2px;
-}
+        /* Done button (fixed blocks only): release leftover planned time to the splits.
+           Visible in run mode too, so it stays the one explicit "I'm finished" action. */
+        .btn-done {
+            background: #333; border: none; color: #ddd;
+            min-height: 44px; padding: 10px 4px; border-radius: 10px;
+            cursor: pointer; font-size: 0.66rem; text-transform: uppercase;
+            font-weight: bold; transition: background 0.25s, color 0.25s;
+        }
+        .btn-done:hover { background: #3a3a3a; color: #fff; }
+        .btn-done.done { background: var(--success); color: #0a0a0a; }
 
-/* ── Inputs: rounded dark-glass (radius 12px) ───────────────────────── */
-input[type="time"],
-input[type="text"],
-input[type="number"] {
-    width: 100%;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--glass-border);
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 15px;
-    padding: 11px 13px;
-    border-radius: var(--r-input);
-    outline: none;
-    color-scheme: dark;
-    box-sizing: border-box;
-    transition: border-color var(--ease), background var(--ease);
-}
-input::placeholder { color: var(--text-faint); }
-input:focus { border-color: var(--lava); background: rgba(255,255,255,0.06); }
-input[type="number"] { font-variant-numeric: tabular-nums; }
+        .btn-add {
+            width: 100%;
+            background: transparent;
+            border: 1px dashed #444;
+            color: var(--text-dim);
+            padding: 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .btn-add:hover { border-color: white; color: white; }
 
-/* ── Multitask toggle — lava when active ────────────────────────────── */
-.toggle-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; }
-.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.switch .track {
-    position: absolute; inset: 0; cursor: pointer;
-    background: rgba(255,255,255,0.12);
-    border-radius: 22px;
-    transition: background var(--ease);
-}
-.switch .track::before {
-    content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px;
-    background: #fff; border-radius: 50%;
-    transition: transform var(--ease), background var(--ease);
-}
-.switch input:checked + .track { background: var(--lava); }
-.switch input:checked + .track::before { transform: translateX(18px); background: #fff; }
-.toggle-label { color: var(--text-dim); font-size: 12px; line-height: 1.4; }
+        .btn-remove {
+            background: transparent;
+            border: none;
+            color: #6e6e6e;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+        .btn-remove:hover { color: var(--danger); }
 
-/* =====================================================================
-   TIMER LIST — flex column, gap 12px.
-   Cards cascade navy→brown→lava via :nth-child (pure CSS, no JS).
-   ===================================================================== */
-#fixedContainer,
-#percentContainer {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
+        /* VISUALIZER → wall-clock timeline (wake → bed) */
+        .timeline {
+            margin-top: 36px;
+            width: 100%;
+            position: relative;
+        }
+        .tl-bar {
+            position: relative;
+            height: 42px;
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+        /* Layers inside the bar. Each is absolute inset:0 and clips its children to
+           the rounded bar; the NOW line is a sibling with overflow visible so its
+           dot/label can sit just outside the bar. */
+        .tl-past, .tl-segs, .tl-blobs {
+            position: absolute; inset: 0;
+            overflow: hidden;
+            border-radius: 7px;
+        }
+        .tl-past { background: #111; width: 0; transition: width 0.4s ease; z-index: 1; }
+        .tl-segs { z-index: 2; }
+        .tl-blobs { z-index: 3; pointer-events: none; }
+        .segment {
+            position: absolute;
+            top: 0; bottom: 0;
+            box-sizing: border-box;
+            box-shadow: inset 1px 0 0 rgba(0,0,0,0.35);
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), left 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.6s ease, border-color 0.4s ease;
+        }
+        .segment.free {
+            background: repeating-linear-gradient(45deg, #2a2a2a, #2a2a2a 4px, #232323 4px, #232323 8px) !important;
+        }
+        /* Spent-time blobs: a block's identity color, dimmed to read as history. */
+        .spent-blob {
+            position: absolute;
+            top: 7px; bottom: 7px;
+            min-width: 2px;
+            border-radius: 4px;
+            opacity: 0.4;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+            transition: left 0.3s linear, width 0.3s linear;
+        }
+        /* NOW marker: green pulse line splitting past (dim) from future (bright). */
+        .tl-now {
+            position: absolute;
+            top: -4px; bottom: -4px;
+            width: 2px;
+            background: var(--success);
+            transform: translateX(-50%);
+            box-shadow: 0 0 10px rgba(6,214,160,0.65);
+            z-index: 6;
+            transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .tl-now-dot {
+            position: absolute;
+            top: -5px; left: 50%;
+            width: 9px; height: 9px;
+            transform: translateX(-50%);
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(6,214,160,0.85);
+            animation: nowPulse 1.4s infinite;
+        }
+        .tl-now-label {
+            position: absolute;
+            top: -24px; left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-size: 0.58rem;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            color: var(--success);
+            background: #0a0a0a;
+            padding: 1px 7px;
+            border-radius: 8px;
+            border: 1px solid rgba(6,214,160,0.45);
+        }
+        @keyframes nowPulse {
+            0%, 100% { box-shadow: 0 0 6px rgba(6,214,160,0.6); transform: translateX(-50%) scale(1); }
+            50%      { box-shadow: 0 0 12px rgba(6,214,160,1);  transform: translateX(-50%) scale(1.25); }
+        }
+        /* Hour ticks beneath the bar */
+        .tl-ticks {
+            position: relative;
+            height: 18px;
+            margin-top: 6px;
+            width: 100%;
+        }
+        .tl-tick {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            font-size: 0.58rem;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+        .tl-tick-end { transform: translateX(-100%); }
 
-/* Card base. --card-base is the spec hex (set per nth-child below); a
-   faint top highlight gives depth without muddying the flat ramp.        */
-.category-row {
-    --card-base: var(--navy);
-    position: relative;
-    display: grid;
-    grid-template-columns: 1.6fr 0.9fr 1.35fr 84px 40px;
-    gap: 10px;
-    align-items: center;
-    margin: 0;
-    padding: 14px 16px;
-    border-radius: var(--r-card);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-left: 3px solid rgba(255,255,255,0.10);
-    background:
-        linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 42%),
-        var(--card-base);
-    color: var(--text);
-    box-shadow: var(--shadow-card);
-    transition: transform var(--ease), box-shadow var(--ease), border-color var(--ease), background var(--ease);
-}
-.category-row.is-percent { border-left-style: dashed; border-left-color: rgba(255,255,255,0.14); }
-.category-row.is-fixed   { grid-template-columns: 1.1fr 0.85fr 0.5fr 0.85fr 56px 54px 28px; }
-.category-row:active { transform: scale(0.96); }
+        .results-list { margin-top: 16px; }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid #1a1a1a;
+            font-size: 0.8rem;
+        }
+        .result-item:last-child { border-bottom: none; }
+        .result-item span:last-child { text-align: right; white-space: nowrap; }
+        .result-item.free-row span:first-child { font-weight: 600; }
+        .time-val { font-weight: bold; color: var(--primary-highlight); }
 
-/* ── THE CASCADE RAMP (navy → brown → lava) ───────────────────────────
-   Fixed blocks take the cold top (stops 1–5); percent blocks take the
-   warm/lava bottom (stops 5–10). The two meet at #4A352F so the whole
-   list reads as one continuous heat ramp top→bottom. :last-child on
-   percent always locks to lava so the bottom card is molten.            */
-#fixedContainer .category-row:nth-child(1)   { --card-base: #1A1F26; }
-#fixedContainer .category-row:nth-child(2)   { --card-base: #21222B; }
-#fixedContainer .category-row:nth-child(3)   { --card-base: #2A2830; }
-#fixedContainer .category-row:nth-child(4)   { --card-base: #3A3138; }
-#fixedContainer .category-row:nth-child(n+5) { --card-base: #4A352F; }
+        .total-warning {
+            color: var(--danger);
+            font-size: 0.8rem;
+            text-align: center;
+            margin-top: 10px;
+            display: none;
+        }
+        .section-caption { color: var(--text-dim); font-size: 0.72rem; margin: -6px 0 10px 2px; }
+        .viz-caption { color: var(--text-dim); font-size: 0.72rem; margin-top: 8px; }
 
-#percentContainer .category-row:nth-child(1)   { --card-base: #4A352F; }
-#percentContainer .category-row:nth-child(2)   { --card-base: #6B3A2C; }
-#percentContainer .category-row:nth-child(3)   { --card-base: #8F3A2A; }
-#percentContainer .category-row:nth-child(4)   { --card-base: #B23A2A; }
-#percentContainer .category-row:nth-child(5)   { --card-base: #C33C2A; }
-#percentContainer .category-row:nth-child(n+6) { --card-base: #D33C29; }
-#percentContainer .category-row:last-child     { --card-base: #D33C29; }
+        /* Undo / message toast */
+        .toast {
+            position: fixed; bottom: 24px; left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #222; border: 1px solid #333; color: #fff;
+            padding: 12px 18px; border-radius: 14px;
+            display: flex; gap: 16px; align-items: center;
+            opacity: 0; pointer-events: none;
+            transition: opacity .25s, transform .25s;
+            z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,.6);
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+        #toastUndo {
+            background: var(--primary-highlight); border: none; color: #fff;
+            padding: 6px 12px; border-radius: 8px; cursor: pointer;
+            font-weight: bold; font-size: .8rem;
+        }
+        #toastUndo.hidden { display: none; }
 
-/* ── States: done / active (ember) / alarm ──────────────────────────── */
-.category-row.done { opacity: 0.6; }
+        /* Reset the day */
+        .btn-reset {
+            width: 100%;
+            background: transparent;
+            border: 1px dashed #444;
+            color: var(--text-dim);
+            padding: 14px;
+            border-radius: 14px;
+            cursor: pointer;
+            margin-top: 32px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+            transition: border-color 0.3s, color 0.3s, background 0.3s;
+        }
+        .btn-reset:hover { border-color: var(--danger); color: var(--danger); background: rgba(255,77,77,0.05); }
+        .btn-reset:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
 
-/* ACTIVE = slow ember glow + soft pulse. NEVER a flat background — the
-   cascade stays visible underneath. app.js sets border-left color inline. */
-.category-row.active {
-    border-color: rgba(255,255,255,0.18);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.10), 0 0 22px rgba(211,60,41,0.22), var(--shadow-card);
-    animation: emberPulse 2.8s ease-in-out infinite;
-}
-@keyframes emberPulse {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 16px rgba(211,60,41,0.18), var(--shadow-card); }
-    50%      { box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 0 32px rgba(211,60,41,0.38), var(--shadow-card); }
-}
+        /* Confirmation modal */
+        .modal-backdrop {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.25s ease;
+            z-index: 100;
+        }
+        .modal-backdrop.show { opacity: 1; pointer-events: auto; }
+        .modal-card {
+            background: var(--card-bg);
+            border: 1px solid #333;
+            border-radius: 28px;
+            padding: 32px;
+            max-width: 380px; width: 100%;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+            transform: scale(0.96);
+            transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);
+            text-align: center;
+        }
+        .modal-backdrop.show .modal-card { transform: scale(1); }
+        .modal-card h2 {
+            font-size: 1.25rem; font-weight: 600;
+            letter-spacing: -0.3px; margin: 0 0 12px 0;
+            text-transform: none; line-height: 1.3;
+        }
+        .modal-card p {
+            color: var(--text-dim); font-size: 0.85rem;
+            line-height: 1.5; margin: 0 0 24px 0;
+        }
+        .modal-actions { display: flex; flex-direction: column; gap: 10px; }
+        .btn-cancel {
+            width: 100%; background: #222; border: 1px solid #333;
+            color: #fff; padding: 14px; border-radius: 14px;
+            cursor: pointer; font-size: 0.8rem; font-weight: 600;
+            transition: background 0.25s;
+        }
+        .btn-cancel:hover { background: #2a2a2a; }
+        .btn-cancel:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
 
-.category-row.alarm { animation: alarmPulse 0.9s infinite; }
-@keyframes alarmPulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(211,60,41,0); }
-    50%      { box-shadow: 0 0 0 5px rgba(211,60,41,0.55), 0 0 26px rgba(211,60,41,0.45); }
-}
+        /* Hold-to-confirm: deliberate, can't be clicked through by accident */
+        .btn-confirm {
+            position: relative; width: 100%;
+            background: #1a1a1a; border: 1px solid var(--danger);
+            color: #fff; padding: 14px; border-radius: 14px;
+            cursor: pointer; font-size: 0.8rem; font-weight: 700;
+            overflow: hidden;
+            transition: border-color 0.3s, background 0.3s;
+            -webkit-user-select: none; user-select: none;
+            touch-action: none;
+        }
+        .btn-confirm:hover { background: #202020; }
+        .btn-confirm:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+        .btn-confirm .htc-fill {
+            position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+            background: var(--danger); opacity: 0.22;
+            transition: width 1.3s linear;
+        }
+        .btn-confirm.holding .htc-fill { width: 100%; }
+        .btn-confirm.complete { border-color: var(--success); background: rgba(6,214,160,0.12); }
+        .btn-confirm.complete .htc-fill { background: var(--success); opacity: 0.25; }
+        .btn-confirm .htc-label { position: relative; }
 
-/* ── LEFT COLUMN: task title + allocated-budget subtitle ────────────── */
-.card-left {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-}
-.category-row input[type="text"] {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text);
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    padding: 4px 6px;
-    border-radius: 10px;
-    width: 100%;
-}
-.category-row input[type="text"]:focus { border-color: rgba(255,255,255,0.25); background: rgba(0,0,0,0.18); }
+        /* Done slider modal (percent categories): plain click confirm, not hold-to-confirm. */
+        .done-slider-row { display: flex; align-items: center; gap: 14px; margin: 0 0 24px; }
+        #doneSlider { flex: 1; accent-color: var(--primary-highlight); cursor: pointer; }
+        #doneVal { min-width: 72px; text-align: right; color: var(--text-dim); font-size: 0.85rem; }
+        #doneConfirm { border-color: var(--primary-highlight); }
+        #doneConfirm:hover { background: rgba(58,134,255,0.14); }
 
-.category-row input[type="number"],
-.category-row input[type="time"] {
-    background: rgba(0,0,0,0.28);
-    border: 1px solid rgba(255,255,255,0.10);
-    color: var(--text);
-    font-size: 14px;
-    font-weight: 500;
-    padding: 9px 11px;
-    border-radius: var(--r-input);
-}
+        /* ── RUN MODE: strip editing UI, leave slots + name + remaining + progress ── */
+        .app-container.mode-run .input-group,
+        .app-container.mode-run .section-label,
+        .app-container.mode-run .btn-add,
+        .app-container.mode-run .results-list,
+        .app-container.mode-run .total-warning { display: none !important; }
+        .app-container.mode-run .category-row {
+            grid-template-columns: 1fr auto;
+            cursor: pointer;
+        }
+        /* Fixed rows keep their Done button in run mode: name | display | Done. */
+        .app-container.mode-run .category-row.is-fixed {
+            grid-template-columns: 1fr auto auto;
+        }
+        .app-container.mode-run .category-row input[type="number"],
+        .app-container.mode-run .category-row input[type="time"],
+        .app-container.mode-run .category-row .btn-timer,
+        .app-container.mode-run .category-row .btn-remove { display: none; }
+        .app-container.mode-run .category-row .td-budget { display: none; }
+        .app-container.mode-run .category-row input[type="text"] {
+            pointer-events: none;
+            background: transparent;
+            border-color: transparent;
+            padding-left: 0;
+        }
+        .app-container.mode-run .category-row:active { transform: scale(0.985); }
 
-/* Allocated-budget subtitle: "Budget 4.0h (20%)" — 14px / 500 */
-.td-budget {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-dim);
-    letter-spacing: 0.1px;
-    padding: 0 6px;
-    font-variant-numeric: tabular-nums;
-}
+        /* ── ZEN MODE: calm full-screen focus on the running timer(s) ── */
+        .zen-overlay {
+            position: fixed; inset: 0;
+            background: rgba(8,8,8,0.93);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 48px; padding: 40px 24px;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.4s ease;
+            z-index: 200;
+        }
+        .zen-overlay.show { opacity: 1; pointer-events: auto; }
+        .zen-content {
+            display: flex; flex-wrap: wrap;
+            align-items: center; justify-content: center;
+            gap: 56px; width: 100%; max-width: 920px;
+        }
+        .zen-card {
+            display: flex; flex-direction: column; align-items: center;
+            min-width: 220px;
+            border-top: 3px solid #333;
+            padding-top: 20px;
+        }
+        .zen-name {
+            color: var(--text-dim);
+            font-size: 0.78rem; text-transform: uppercase; letter-spacing: 2.5px;
+            margin-bottom: 20px; text-align: center; max-width: 320px;
+        }
+        .zen-time {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: clamp(2.8rem, 11vw, 6.5rem);
+            font-weight: 700; line-height: 1;
+            transition: color 0.4s ease;
+        }
+        .zen-sub {
+            color: var(--text-dim); font-size: 0.72rem; margin-top: 12px;
+            letter-spacing: 1.5px; text-transform: uppercase;
+        }
+        .zen-progress {
+            width: 100%; max-width: 320px; height: 4px;
+            margin-top: 26px; border-radius: 4px;
+            background: rgba(255,255,255,0.06); overflow: hidden;
+        }
+        .zen-progress-fill {
+            height: 100%; width: 0%; border-radius: 4px;
+            transition: width 0.3s linear, background-color 0.3s ease;
+        }
+        .zen-card.alarm .zen-time { animation: zenFlash 1s infinite; }
+        @keyframes zenFlash { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .zen-empty { color: var(--text-dim); font-size: 0.95rem; letter-spacing: 1.5px; }
+        .zen-exit {
+            background: transparent; border: 1px solid #333; color: var(--text-dim);
+            padding: 10px 24px; border-radius: 30px; cursor: pointer;
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: 2px; font-weight: 600;
+            transition: border-color 0.25s, color 0.25s;
+        }
+        .zen-exit:hover { border-color: var(--primary-highlight); color: #fff; }
+        .zen-exit:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
 
-/* ── RIGHT COLUMN: live elapsed timer ───────────────────────────────── */
-.timer-display {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    text-align: right;
-    line-height: 1.1;
-    min-width: 0;
-}
-.td-elapsed {
-    font-family: var(--font);
-    font-size: 16px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;     /* no jitter as seconds tick */
-    letter-spacing: -0.2px;
-    color: var(--text);
-    transition: color 0.4s ease, opacity 0.25s ease;
-}
-.category-row:not(.active) .td-elapsed { opacity: 0.55; }
-.category-row.active .td-elapsed { opacity: 1; }
+        /* Zen button lights up while zen is active */
+        .hdr-btn.active { background: var(--primary-highlight); color: #fff; border-color: var(--primary-highlight); }
+        /* NOW button lights up green while the reflow is active (green = "present"). */
+        #nowBtn.active { background: var(--success); color: #0a0a0a; border-color: var(--success); }
 
-/* ── Per-row progress bar (fill = block color, set inline by app.js) ── */
-.progress {
-    grid-column: 1 / -1;
-    height: 6px;
-    margin-top: 12px;
-    border-radius: 6px;
-    background: var(--track);
-    overflow: hidden;
-}
-.progress-fill {
-    height: 100%;
-    width: 0%;
-    border-radius: 6px;
-    transition: width 0.3s linear, background-color var(--ease);
-}
+        /* Mobile expand chevron — hidden on desktop and in run mode; shown only
+           inside the mobile media query for edit-mode rows. */
+        .chevron { display: none; }
 
-/* ── Buttons inside rows ────────────────────────────────────────────── */
-.btn-timer {
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.14);
-    color: #fff;
-    min-height: 44px;
-    padding: 10px 8px;
-    border-radius: 12px;
-    cursor: pointer;
-    font-family: var(--font);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    transition: background var(--ease), color var(--ease), transform 0.12s ease;
-}
-.btn-timer:hover { background: rgba(255,255,255,0.18); }
-.btn-timer:active { transform: scale(0.96); }
-.btn-timer.running { background: #fff; color: #111; border-color: #fff; }
+        @media (max-width: 520px) {
+            .app-container { padding: 22px; border-radius: 28px; }
 
-.btn-done {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.12);
-    color: #fff;
-    min-height: 44px;
-    padding: 10px 6px;
-    border-radius: 12px;
-    cursor: pointer;
-    font-family: var(--font);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    transition: background var(--ease), color var(--ease), transform 0.12s ease;
-}
-.btn-done:hover { background: rgba(255,255,255,0.16); }
-.btn-done:active { transform: scale(0.96); }
-.btn-done.done { background: var(--success); color: #06231a; border-color: var(--success); }
+            /* Edit mode: each row becomes a compact summary (name · readout · chevron)
+               that expands on tap to reveal the secondary fields at full size.
+               Run mode keeps its grid (name | display | Done) and whole-row tap. */
+            .app-container:not(.mode-run) .category-row {
+                display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
+            }
+            /* Line 1 (always visible): name grows to fill, timer readout + chevron right. */
+            .app-container:not(.mode-run) .category-row > input[type="text"] {
+                flex: 1 1 auto; min-width: 0; order: 1;
+            }
+            .app-container:not(.mode-run) .category-row .timer-display { flex: 0 0 auto; order: 1; }
+            .app-container:not(.mode-run) .chevron {
+                display: inline-flex; align-items: center; justify-content: center;
+                flex: 0 0 36px; min-height: 40px; order: 2;
+                background: transparent; border: 1px solid #333; color: var(--text-dim);
+                border-radius: 9px; cursor: pointer; font-size: 0.85rem;
+                transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            }
+            .app-container:not(.mode-run) .chevron:hover { color: #fff; border-color: #444; }
+            .app-container:not(.mode-run) .category-row.expanded .chevron { transform: rotate(180deg); }
 
-.btn-remove {
-    background: transparent;
-    border: none;
-    color: var(--text-faint);
-    cursor: pointer;
-    font-size: 20px;
-    line-height: 1;
-    transition: color var(--ease), transform 0.12s ease;
-}
-.btn-remove:hover { color: var(--lava); }
-.btn-remove:active { transform: scale(0.96); }
+            /* Secondary fields: hidden while collapsed. */
+            .app-container:not(.mode-run) .category-row > input[type="time"],
+            .app-container:not(.mode-run) .category-row > input[type="number"],
+            .app-container:not(.mode-run) .category-row .btn-timer,
+            .app-container:not(.mode-run) .category-row .btn-done,
+            .app-container:not(.mode-run) .category-row .btn-remove { display: none; }
 
-/* ── Add buttons ────────────────────────────────────────────────────── */
-.btn-add {
-    width: 100%;
-    background: transparent;
-    border: 1px dashed rgba(255,255,255,0.18);
-    color: var(--text-dim);
-    padding: 14px;
-    border-radius: 12px;
-    cursor: pointer;
-    margin: 14px 0 22px;
-    font-family: var(--font);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.4px;
-    transition: border-color var(--ease), color var(--ease), transform 0.12s ease;
-}
-.btn-add:hover { border-color: var(--lava); color: #fff; }
-.btn-add:active { transform: scale(0.96); }
+            /* …revealed below when expanded. Inputs share a line; buttons share the next. */
+            .app-container:not(.mode-run) .category-row.expanded > input[type="time"],
+            .app-container:not(.mode-run) .category-row.expanded > input[type="number"] {
+                display: block; flex: 1 1 45%; min-width: 0; order: 3;
+            }
+            .app-container:not(.mode-run) .category-row.is-percent.expanded > input[type="number"] {
+                flex: 1 1 100%;   /* percent rows have only the % input on this line */
+            }
+            .app-container:not(.mode-run) .category-row.expanded .btn-timer {
+                display: flex; flex: 1 1 50%; min-height: 44px; order: 4;
+                align-items: center; justify-content: center;
+            }
+            .app-container:not(.mode-run) .category-row.expanded .btn-done {
+                display: flex; flex: 0 0 76px; min-height: 44px; order: 4;
+                align-items: center; justify-content: center;
+            }
+            .app-container:not(.mode-run) .category-row.expanded .btn-remove {
+                display: flex; flex: 0 0 44px; min-height: 44px; order: 4;
+                align-items: center; justify-content: center;
+            }
 
-/* =====================================================================
-   WALL-CLOCK TIMELINE (wake → bed)
-   ===================================================================== */
-.timeline { margin-top: 32px; width: 100%; position: relative; }
-.tl-bar {
-    position: relative;
-    height: 44px;
-    width: 100%;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--glass-border);
-    border-radius: 10px;
-    overflow: visible;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-}
-.tl-past, .tl-segs, .tl-blobs {
-    position: absolute; inset: 0;
-    overflow: hidden;
-    border-radius: 9px;
-}
-.tl-past { background: rgba(0,0,0,0.35); width: 0; transition: width 0.4s ease; z-index: 1; }
-.tl-segs { z-index: 2; }
-.tl-blobs { z-index: 3; pointer-events: none; }
-.segment {
-    position: absolute;
-    top: 0; bottom: 0;
-    box-sizing: border-box;
-    box-shadow: inset 1px 0 0 rgba(0,0,0,0.35);
-    transition: width 0.5s cubic-bezier(0.4,0,0.2,1),
-                left 0.5s cubic-bezier(0.4,0,0.2,1),
-                background-color 0.6s ease, border-color 0.4s ease;
-}
-.segment.done { opacity: 0.5; }
-.segment.free {
-    background: repeating-linear-gradient(45deg,
-        rgba(255,255,255,0.05), rgba(255,255,255,0.05) 4px,
-        rgba(255,255,255,0.02) 4px, rgba(255,255,255,0.02) 8px) !important;
-}
-.spent-blob {
-    position: absolute;
-    top: 8px; bottom: 8px;
-    min-width: 2px;
-    border-radius: 4px;
-    opacity: 0.45;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
-    transition: left 0.3s linear, width 0.3s linear;
-}
-.tl-now {
-    position: absolute;
-    top: -4px; bottom: -4px;
-    width: 2px;
-    background: var(--now);
-    transform: translateX(-50%);
-    box-shadow: 0 0 10px rgba(6,214,160,0.65);
-    z-index: 6;
-    transition: left 0.5s cubic-bezier(0.4,0,0.2,1);
-}
-.tl-now-dot {
-    position: absolute;
-    top: -5px; left: 50%;
-    width: 9px; height: 9px;
-    transform: translateX(-50%);
-    border-radius: 50%;
-    background: var(--now);
-    box-shadow: 0 0 8px rgba(6,214,160,0.85);
-    animation: nowPulse 1.4s infinite;
-}
-.tl-now-label {
-    position: absolute;
-    top: -24px; left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    color: var(--now);
-    background: var(--bg-app);
-    padding: 2px 7px;
-    border-radius: 8px;
-    border: 1px solid rgba(6,214,160,0.45);
-}
-@keyframes nowPulse {
-    0%, 100% { box-shadow: 0 0 6px rgba(6,214,160,0.6); transform: translateX(-50%) scale(1); }
-    50%      { box-shadow: 0 0 12px rgba(6,214,160,1);  transform: translateX(-50%) scale(1.25); }
-}
-.tl-ticks { position: relative; height: 18px; margin-top: 6px; width: 100%; }
-.tl-tick {
-    position: absolute; top: 0;
-    transform: translateX(-50%);
-    font-size: 10px;
-    color: var(--text-faint);
-    white-space: nowrap;
-    letter-spacing: 0.2px;
-}
-.tl-tick-end { transform: translateX(-100%); }
+            /* Progress bar always full-width, last. */
+            .app-container:not(.mode-run) .category-row .progress { flex: 1 1 100%; order: 99; margin-top: 4px; }
 
-/* =====================================================================
-   RESULTS LIST (edit mode)
-   ===================================================================== */
-.results-list {
-    margin-top: 20px;
-    padding: 14px 16px;
-    background: var(--glass);
-    border: 1px solid var(--hairline);
-    border-radius: var(--r-card);
-}
-.result-item {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 9px 0;
-    border-bottom: 1px solid var(--hairline);
-    font-size: 13px;
-    color: var(--text);
-}
-.result-item:last-child { border-bottom: none; }
-.result-item span:last-child { text-align: right; white-space: nowrap; }
-.result-item.free-row span:first-child { font-weight: 600; color: var(--text-dim); }
-.budget-val { color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.time-val { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
-
-/* =====================================================================
-   TOAST
-   ===================================================================== */
-.toast {
-    position: fixed;
-    bottom: 120px; left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    background: var(--glass-strong);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    color: #fff;
-    padding: 12px 16px;
-    border-radius: 14px;
-    display: flex; gap: 14px; align-items: center;
-    opacity: 0; pointer-events: none;
-    transition: opacity .25s, transform .25s;
-    z-index: 60;
-    box-shadow: var(--shadow-pill);
-    max-width: 396px;
-}
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-#toastUndo {
-    background: var(--lava); border: none; color: #fff;
-    padding: 7px 13px; border-radius: 999px; cursor: pointer;
-    font-family: var(--font); font-weight: 700; font-size: 12px;
-    letter-spacing: 0.4px; text-transform: uppercase;
-}
-#toastUndo:active { transform: scale(0.96); }
-#toastUndo.hidden { display: none; }
-
-/* =====================================================================
-   BOTTOM CONTROL DRAWER + glassmorphism RESET entry pill
-   (the pill opens the reset modal; the hold-to-confirm lives in the modal)
-   ===================================================================== */
-.bottom-drawer {
-    position: fixed;
-    bottom: 0; left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 428px;
-    background: #000000;
-    border-radius: 20px 20px 0 0;
-    box-shadow: 0 -10px 30px rgba(0,0,0,0.2);
-    padding: 24px 16px 36px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 30;
-}
-.btn-reset {
-    width: 100%;
-    max-width: 320px;
-    background: var(--glass-strong);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    color: #fff;
-    padding: 16px;
-    border-radius: var(--r-pill);
-    cursor: pointer;
-    font-family: var(--font);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    box-shadow: var(--shadow-pill);
-    transition: border-color var(--ease), background var(--ease), color var(--ease), transform 0.12s ease, box-shadow var(--ease);
-}
-.btn-reset:hover { border-color: var(--lava); box-shadow: 0 4px 16px rgba(211,60,41,0.35); }
-.btn-reset:active { transform: scale(0.96); }
-.btn-reset:focus-visible { outline: 2px solid var(--lava); outline-offset: 3px; }
-
-/* =====================================================================
-   MODALS (done-slider; reset is now the bottom pill above)
-   ===================================================================== */
-.modal-backdrop {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.6);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-    display: flex; align-items: center; justify-content: center;
-    padding: 24px;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.25s ease;
-    z-index: 100;
-}
-.modal-backdrop.show { opacity: 1; pointer-events: auto; }
-.modal-card {
-    background: var(--glass-strong);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    border: 1px solid var(--glass-border);
-    border-radius: 28px;
-    padding: 30px;
-    max-width: 380px; width: 100%;
-    box-shadow: 0 30px 80px rgba(0,0,0,0.7);
-    transform: scale(0.96);
-    transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);
-    text-align: center;
-}
-.modal-backdrop.show .modal-card { transform: scale(1); }
-.modal-card h2 {
-    font-size: 20px; font-weight: 700;
-    letter-spacing: -0.4px; margin: 0 0 12px;
-    line-height: 1.3; color: var(--text);
-}
-.modal-card p {
-    color: var(--text-dim); font-size: 13px;
-    line-height: 1.55; margin: 0 0 24px;
-}
-.modal-actions { display: flex; flex-direction: column; gap: 10px; }
-
-.btn-cancel {
-    width: 100%;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid var(--glass-border);
-    color: #fff;
-    padding: 14px; border-radius: 14px;
-    cursor: pointer;
-    font-family: var(--font);
-    font-size: 13px; font-weight: 600;
-    transition: background var(--ease), transform 0.12s ease;
-}
-.btn-cancel:hover { background: rgba(255,255,255,0.10); }
-.btn-cancel:active { transform: scale(0.96); }
-.btn-cancel:focus-visible { outline: 2px solid var(--lava); outline-offset: 2px; }
-
-/* Confirm button — lava-bordered glass pill. In the reset modal this is the
-   hold-to-confirm: holding fills with lava over 1.5s, releasing early drains
-   back (cancel). app.js toggles .holding / .complete on #modalConfirm.
-   #doneConfirm reuses the base look as a plain click confirm (no htc-fill). */
-.btn-confirm {
-    position: relative; width: 100%;
-    background: var(--glass-strong);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--lava);
-    color: #fff;
-    padding: 16px; border-radius: var(--r-pill);
-    cursor: pointer;
-    font-family: var(--font);
-    font-size: 13px; font-weight: 700;
-    letter-spacing: 0.8px; text-transform: uppercase;
-    overflow: hidden;
-    box-shadow: var(--shadow-pill);
-    -webkit-user-select: none; user-select: none;
-    touch-action: none;
-    transition: border-color var(--ease), background var(--ease), transform 0.12s ease;
-}
-.btn-confirm:hover { background: rgba(211,60,41,0.18); }
-.btn-confirm:active { transform: scale(0.96); }
-.btn-confirm:focus-visible { outline: 2px solid var(--lava); outline-offset: 2px; }
-.btn-confirm .htc-fill {
-    position: absolute; top: 0; bottom: 0; left: 0; width: 0;
-    background: linear-gradient(90deg, var(--lava-dk), var(--lava));
-    opacity: 0.6;
-    transition: width 0.4s ease;                 /* drain (cancel) */
-}
-.btn-confirm.holding .htc-fill {
-    width: 100%;
-    transition: width 1.5s linear;               /* charge-up (hold) */
-}
-.btn-confirm.complete { border-color: var(--success); background: rgba(6,214,160,0.18); }
-.btn-confirm.complete .htc-fill { background: var(--success); opacity: 0.3; }
-.btn-confirm .htc-label { position: relative; z-index: 1; }
-
-/* Done slider modal (percent categories) */
-.done-slider-row { display: flex; align-items: center; gap: 14px; margin: 0 0 24px; }
-#doneSlider { flex: 1; accent-color: var(--lava); cursor: pointer; }
-#doneVal {
-    min-width: 80px; text-align: right;
-    color: var(--text-dim); font-size: 13px;
-    font-variant-numeric: tabular-nums;
-}
-#doneConfirm { border-color: var(--lava); }
-#doneConfirm:hover { background: rgba(211,60,41,0.18); }
-
-/* =====================================================================
-   RUN MODE — strip editing UI; big title left / big tabular timer right.
-   Grid stays 1fr auto (spec). Budget subtitle stays visible under title.
-   ===================================================================== */
-.app-container.mode-run .input-group,
-.app-container.mode-run .section-label,
-.app-container.mode-run .btn-add,
-.app-container.mode-run .results-list,
-.app-container.mode-run .total-warning { display: none !important; }
-
-.app-container.mode-run .category-row {
-    grid-template-columns: 1fr auto;
-    cursor: pointer;
-    align-items: center;
-    padding: 24px 22px;
-}
-.app-container.mode-run .category-row.is-fixed { grid-template-columns: 1fr auto auto; }
-
-.app-container.mode-run .category-row input[type="number"],
-.app-container.mode-run .category-row input[type="time"],
-.app-container.mode-run .category-row .btn-timer,
-.app-container.mode-run .category-row .btn-remove { display: none; }
-
-.app-container.mode-run .category-row input[type="text"] {
-    pointer-events: none;
-    background: transparent;
-    border-color: transparent;
-    padding-left: 0;
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    color: var(--text);
-}
-/* The big live timer — 46px, 700, tabular-nums (no layout jitter). */
-.app-container.mode-run .td-elapsed {
-    font-size: 46px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    letter-spacing: -0.5px;
-}
-.app-container.mode-run .td-budget { font-size: 14px; }
-.app-container.mode-run .btn-done {
-    min-height: 40px;
-    padding: 8px 12px;
-    font-size: 11px;
-}
-.app-container.mode-run .category-row:active { transform: scale(0.96); }
-
-/* =====================================================================
-   ZEN MODE — full-screen focus on the running timer(s)
-   ===================================================================== */
-.zen-overlay {
-    position: fixed; inset: 0;
-    background:
-        radial-gradient(120% 80% at 50% 115%, rgba(211,60,41,0.22), transparent 55%),
-        radial-gradient(100% 60% at 50% -12%, rgba(26,31,38,0.55), transparent 60%),
-        rgba(7,9,12,0.96);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    gap: 48px; padding: 40px 24px;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.4s ease;
-    z-index: 200;
-}
-.zen-overlay.show { opacity: 1; pointer-events: auto; }
-.zen-content {
-    display: flex; flex-wrap: wrap;
-    align-items: center; justify-content: center;
-    gap: 56px; width: 100%; max-width: 920px;
-}
-.zen-card {
-    display: flex; flex-direction: column; align-items: center;
-    min-width: 220px;
-    border-top: 3px solid #333;
-    padding-top: 22px;
-}
-.zen-name {
-    color: var(--text-dim);
-    font-size: 12px; text-transform: uppercase; letter-spacing: 2.5px;
-    font-weight: 600; margin-bottom: 20px; text-align: center; max-width: 320px;
-}
-.zen-time {
-    font-family: var(--font);
-    font-size: clamp(2.8rem, 11vw, 6.5rem);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    letter-spacing: -1px;
-    transition: color 0.4s ease;
-}
-.zen-sub {
-    color: var(--text-dim); font-size: 11px; margin-top: 14px;
-    letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600;
-}
-.zen-progress {
-    width: 100%; max-width: 320px; height: 4px;
-    margin-top: 26px; border-radius: 4px;
-    background: var(--track); overflow: hidden;
-}
-.zen-progress-fill {
-    height: 100%; width: 0%; border-radius: 4px;
-    transition: width 0.3s linear, background-color var(--ease);
-}
-.zen-card.alarm .zen-time { animation: zenFlash 1s infinite; }
-@keyframes zenFlash { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.zen-empty {
-    color: var(--text-dim); font-size: 14px;
-    letter-spacing: 1.5px; text-transform: uppercase;
-}
-.zen-exit {
-    background: transparent; border: 1px solid var(--glass-border);
-    color: var(--text-dim);
-    padding: 10px 24px; border-radius: var(--r-pill); cursor: pointer;
-    font-family: var(--font);
-    font-size: 11px; text-transform: uppercase; letter-spacing: 2px; font-weight: 600;
-    transition: border-color var(--ease), color var(--ease), transform 0.12s ease;
-}
-.zen-exit:hover { border-color: var(--lava); color: #fff; }
-.zen-exit:active { transform: scale(0.96); }
-.zen-exit:focus-visible { outline: 2px solid var(--lava); outline-offset: 2px; }
-
-/* Chevron — hidden on desktop and in run mode */
-.chevron { display: none; }
-
-/* =====================================================================
-   MOBILE (≤ 520px) — edit-mode rows collapse to a summary + expand
-   ===================================================================== */
-@media (max-width: 520px) {
-    .app-container:not(.mode-run) .category-row {
-        display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
-        padding: 16px;
-    }
-    /* Line 1 (always visible): title+subtitle grow left, elapsed + chevron right. */
-    .app-container:not(.mode-run) .card-left {
-        flex: 1 1 auto; min-width: 0; order: 1;
-    }
-    .app-container:not(.mode-run) .card-left input[type="text"] { font-size: 20px; }
-    .app-container:not(.mode-run) .timer-display { flex: 0 0 auto; order: 1; }
-    .app-container:not(.mode-run) .chevron {
-        display: inline-flex; align-items: center; justify-content: center;
-        flex: 0 0 36px; min-height: 40px; order: 2;
-        background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border);
-        color: var(--text-dim);
-        border-radius: 10px; cursor: pointer; font-size: 14px;
-        transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-    }
-    .app-container:not(.mode-run) .chevron:hover { color: #fff; border-color: var(--lava); }
-    .app-container:not(.mode-run) .category-row.expanded .chevron { transform: rotate(180deg); }
-
-    /* Secondary fields: hidden while collapsed. */
-    .app-container:not(.mode-run) .category-row > input[type="time"],
-    .app-container:not(.mode-run) .category-row > input[type="number"],
-    .app-container:not(.mode-run) .category-row .btn-timer,
-    .app-container:not(.mode-run) .category-row .btn-done,
-    .app-container:not(.mode-run) .category-row .btn-remove { display: none; }
-
-    /* …revealed below when expanded. Inputs share a line; buttons share the next. */
-    .app-container:not(.mode-run) .category-row.expanded > input[type="time"],
-    .app-container:not(.mode-run) .category-row.expanded > input[type="number"] {
-        display: block; flex: 1 1 45%; min-width: 0; order: 3;
-    }
-    .app-container:not(.mode-run) .category-row.is-percent.expanded > input[type="number"] {
-        flex: 1 1 100%;
-    }
-    .app-container:not(.mode-run) .category-row.expanded .btn-timer {
-        display: flex; flex: 1 1 50%; min-height: 44px; order: 4;
-        align-items: center; justify-content: center;
-    }
-    .app-container:not(.mode-run) .category-row.expanded .btn-done {
-        display: flex; flex: 0 0 76px; min-height: 44px; order: 4;
-        align-items: center; justify-content: center;
-    }
-    .app-container:not(.mode-run) .category-row.expanded .btn-remove {
-        display: flex; flex: 0 0 44px; min-height: 44px; order: 4;
-        align-items: center; justify-content: center;
-    }
-
-    /* Progress bar always full-width, last. */
-    .app-container:not(.mode-run) .category-row .progress {
-        flex: 1 1 100%; order: 99; margin-top: 6px;
-    }
-
-    .app-container.mode-run .td-elapsed { font-size: 40px; }
-    .day-length { margin: 0; padding: 0; align-self: center; }
-}
-
-/* =====================================================================
-   REDUCED MOTION — kill ambient pulses; keep functional hold/progress.
-   ===================================================================== */
-@media (prefers-reduced-motion: reduce) {
-    .category-row.active { animation: none; box-shadow: 0 0 0 1px rgba(255,255,255,0.10), 0 0 18px rgba(211,60,41,0.22), var(--shadow-card); }
-    .category-row.alarm  { animation: none; box-shadow: 0 0 0 3px rgba(211,60,41,0.45); }
-    .tl-now-dot          { animation: none; }
-    .zen-card.alarm .zen-time { animation: none; }
-    .btn-reset .htc-fill,
-    .btn-confirm .htc-fill { transition: width 0.2s ease !important; }
-    .btn-confirm.holding .htc-fill { transition: width 1.5s linear !important; }
-    .progress-fill { transition: width 0.3s linear !important; }
-    .segment, .tl-now, .spent-blob { transition: width 0.3s linear, left 0.3s linear !important; }
-    * { scroll-behavior: auto; }
-}
+            .td-elapsed { font-size: 0.8rem; }
+            .td-budget { font-size: 0.58rem; }
+            .day-length { margin: 0; padding: 0; align-self: center; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .category-row.alarm { animation: none; }
+            .tl-now-dot { animation: none; }
+            .progress-fill { transition: width 0.3s linear !important; }
+            .segment, .tl-now, .spent-blob { transition: width 0.3s linear, left 0.3s linear !important; }
+        }
