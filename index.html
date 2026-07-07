@@ -1,898 +1,941 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='42' fill='%23161616' stroke='%233a86ff' stroke-width='9'/><line x1='50' y1='50' x2='50' y2='26' stroke='%233a86ff' stroke-width='9' stroke-linecap='round'/><line x1='50' y1='50' x2='68' y2='50' stroke='%233a86ff' stroke-width='9' stroke-linecap='round'/></svg>">
-    <title>Overlap Time Budgeter</title>
-    <style>
-        :root {
-            --bg-color: #0a0a0a;
-            --card-bg: #161616;
-            --accent-color: #ffffff;
-            --text-dim: #a0a0a0;
-            --primary-highlight: #3a86ff;
-            --danger: #ff4d4d;
-            --warn: #ffd166;
-            --success: #06d6a0;
-            --border-color: #222;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Overlap Time Budgeter</title>
+  <style>
+    :root {
+      --bg-page: #0D0F12;
+      --bg-container: #0D0F12;
+      --banner-bg: #94A0B3;
+      --text-primary: #FFFFFF;
+      --text-secondary: #A0A5AB;
+      --input-bg: rgba(255, 255, 255, 0.05);
+      --input-border: 1px solid rgba(255, 255, 255, 0.1);
+      --drawer-bg: #000000;
+      --pill-bg: rgba(28, 38, 51, 0.95);
+      --accent: #D33C29;
+      --warning: #ff4757;
+      --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      --time-text: #FFFFFF;
+      --level-1: #1A1F26;
+      --level-2: #4A352F;
+      --level-3: #D33C29;
+    }
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--accent-color);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            margin: 0;
-            padding: 40px 20px;
-        }
+    body[data-theme="light"] {
+      --bg-page: #E8ECF1;
+      --bg-container: #F4F6F9;
+      --banner-bg: #5B7C99;
+      --text-primary: #1A1F26;
+      --text-secondary: #5B6570;
+      --input-bg: rgba(0, 0, 0, 0.03);
+      --input-border: 1px solid rgba(0, 0, 0, 0.08);
+      --drawer-bg: #FFFFFF;
+      --pill-bg: rgba(220, 232, 245, 0.95);
+      --accent: #D33C29;
+      --warning: #ff4757;
+      --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.06);
+      --time-text: #1A1F26;
+    }
 
-        .app-container {
-            width: 100%;
-            max-width: 600px;
-            background: var(--card-bg);
-            padding: 30px;
-            border-radius: 40px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            border: 1px solid var(--border-color);
-        }
+    * {
+      box-sizing: border-box;
+    }
 
-        h1 {
-            font-weight: 600;
-            font-size: 1.5rem;
-            letter-spacing: -0.5px;
-            margin-bottom: 2rem;
-            text-align: center;
-            text-transform: uppercase;
-        }
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
 
-        .section-label {
-            color: var(--text-dim);
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            margin: 32px 0 14px 0;
-            letter-spacing: 1px;
-            display: block;
-            border-bottom: 1px solid #3a3a3a;
-            padding-bottom: 5px;
-        }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', Roboto, sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overscroll-behavior-y: none;
+    }
 
-        .input-group { margin-bottom: 28px; }
+    .app {
+      position: relative;
+      max-width: 428px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: var(--bg-container);
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
 
-        input[type="text"], input[type="number"] {
-            width: 100%;
-            background: #222;
-            border: 1px solid #333;
-            color: white;
-            padding: 12px;
-            border-radius: 12px;
-            font-size: 1rem;
-            box-sizing: border-box;
-            outline: none;
-            transition: border 0.3s;
-        }
-        input:focus { border-color: var(--primary-highlight); }
+    /* Top sticky banner */
+    .top-banner {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--banner-bg);
+      color: #FFFFFF;
+      padding: 14px 16px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
 
-        /* Multitask toggle */
-        .toggle-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: -8px 0 6px 2px;
-        }
-        .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex: none; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .switch .track {
-            position: absolute; inset: 0; cursor: pointer;
-            background: #333; border-radius: 22px; transition: background .25s;
-        }
-        .switch .track::before {
-            content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px;
-            background: #aaa; border-radius: 50%; transition: transform .25s, background .25s;
-        }
-        .switch input:checked + .track { background: var(--primary-highlight); }
-        .switch input:checked + .track::before { transform: translateX(16px); background: #fff; }
-        .toggle-label { color: var(--text-dim); font-size: 0.78rem; }
+    .top-banner h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
 
-        /* ROW STYLES */
-        .category-row {
-            display: grid;
-            grid-template-columns: 1.6fr 0.9fr 1.35fr 84px 40px;
-            gap: 10px;
-            align-items: center;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 15px;
-            background: #1c1c1c;
-            transition: background 0.3s ease, border-color 0.3s ease;
-            border: 1px solid transparent;
-            border-left: 3px solid #3a3a3a;
-        }
-        .category-row.is-percent { border-left: 3px dashed #2a2a2a; }
-        .category-row.active { background: #222; }
+    .theme-btn {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.2);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.2s ease, background 0.3s ease;
+      padding: 0;
+    }
 
-        .timer-display {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            text-align: right;
-            line-height: 1.15;
-        }
-        .td-elapsed {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.85rem;
-            color: var(--primary-highlight);
-            transition: color 0.4s ease, opacity 0.25s ease;
-        }
-        .td-budget {
-            font-size: 0.62rem;
-            color: var(--text-dim);
-            margin-top: 1px;
-        }
-        .category-row:not(.active) .td-elapsed { opacity: 0.5; }
-        .category-row.active .td-elapsed { font-weight: 700; }
+    .theme-btn:active {
+      transform: translateY(-50%) scale(0.92);
+    }
 
-        .btn-timer {
-            background: #333;
-            border: none;
-            color: white;
-            min-height: 44px;
-            padding: 10px 6px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            font-weight: bold;
-            transition: background 0.25s, color 0.25s;
-        }
-        .btn-timer.running { background: var(--accent-color); color: #111; }
+    .theme-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+      pointer-events: none;
+    }
 
-        .btn-add {
-            width: 100%;
-            background: transparent;
-            border: 1px dashed #444;
-            color: var(--text-dim);
-            padding: 12px;
-            border-radius: 12px;
-            cursor: pointer;
-            margin-bottom: 20px;
-            transition: all 0.3s;
-        }
-        .btn-add:hover { border-color: white; color: white; }
+    .theme-btn .icon-moon {
+      display: none;
+    }
 
-        .btn-remove {
-            background: transparent;
-            border: none;
-            color: #6e6e6e;
-            cursor: pointer;
-            font-size: 1.2rem;
-        }
-        .btn-remove:hover { color: var(--danger); }
+    body[data-theme="light"] .theme-btn .icon-sun {
+      display: none;
+    }
 
-        /* VISUALIZER */
-        .visualizer-container {
-            margin-top: 28px;
-            height: 22px;
-            width: 100%;
-            background: #222;
-            border-radius: 4px;
-            overflow: hidden;
-            display: flex;
-            border: 1px solid #333;
-        }
-        .segment {
-            height: 100%;
-            box-sizing: border-box;
-            box-shadow: inset 1px 0 0 rgba(0,0,0,0.35);
-            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.6s ease, border-color 0.4s ease;
-        }
-        .segment.free {
-            background: repeating-linear-gradient(45deg, #2a2a2a, #2a2a2a 4px, #232323 4px, #232323 8px) !important;
-        }
+    body[data-theme="light"] .theme-btn .icon-moon {
+      display: block;
+    }
 
-        .results-list { margin-top: 16px; }
-        .result-item {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 8px 0;
-            border-bottom: 1px solid #1a1a1a;
-            font-size: 0.8rem;
-        }
-        .result-item:last-child { border-bottom: none; }
-        .result-item span:last-child { text-align: right; white-space: nowrap; }
-        .result-item.free-row span:first-child { font-weight: 600; }
-        .time-val { font-weight: bold; color: var(--primary-highlight); }
+    /* Settings / input panels */
+    .glass-panels {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px 16px;
+    }
 
-        .total-warning {
-            color: var(--danger);
-            font-size: 0.8rem;
-            text-align: center;
-            margin-top: 10px;
-            display: none;
-        }
-        .section-caption { color: var(--text-dim); font-size: 0.72rem; margin: -6px 0 10px 2px; }
-        .viz-caption { color: var(--text-dim); font-size: 0.72rem; margin-top: 8px; }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
 
-        /* Undo toast */
-        .toast {
-            position: fixed; bottom: 24px; left: 50%;
-            transform: translateX(-50%) translateY(20px);
-            background: #222; border: 1px solid #333; color: #fff;
-            padding: 12px 18px; border-radius: 14px;
-            display: flex; gap: 16px; align-items: center;
-            opacity: 0; pointer-events: none;
-            transition: opacity .25s, transform .25s;
-            z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,.6);
-        }
-        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-        #toastUndo {
-            background: var(--primary-highlight); border: none; color: #fff;
-            padding: 6px 12px; border-radius: 8px; cursor: pointer;
-            font-weight: bold; font-size: .8rem;
-        }
+    .field label,
+    .toggle-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
 
-        /* Reset the day */
-        .btn-reset {
-            width: 100%;
-            background: transparent;
-            border: 1px dashed #444;
-            color: var(--text-dim);
-            padding: 14px;
-            border-radius: 14px;
-            cursor: pointer;
-            margin-top: 32px;
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: bold;
-            transition: border-color 0.3s, color 0.3s, background 0.3s;
-        }
-        .btn-reset:hover { border-color: var(--danger); color: var(--danger); background: rgba(255,77,77,0.05); }
-        .btn-reset:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+    input[type="number"],
+    input[type="text"] {
+      font-family: inherit;
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: var(--input-bg);
+      border: var(--input-border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.3s ease, background 0.3s ease;
+      width: 100%;
+    }
 
-        /* Confirmation modal */
-        .modal-backdrop {
-            position: fixed; inset: 0;
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            display: flex; align-items: center; justify-content: center;
-            padding: 20px;
-            opacity: 0; pointer-events: none;
-            transition: opacity 0.25s ease;
-            z-index: 100;
-        }
-        .modal-backdrop.show { opacity: 1; pointer-events: auto; }
-        .modal-card {
-            background: var(--card-bg);
-            border: 1px solid #333;
-            border-radius: 28px;
-            padding: 32px;
-            max-width: 380px; width: 100%;
-            box-shadow: 0 30px 80px rgba(0,0,0,0.7);
-            transform: scale(0.96);
-            transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);
-            text-align: center;
-        }
-        .modal-backdrop.show .modal-card { transform: scale(1); }
-        .modal-card h2 {
-            font-size: 1.25rem; font-weight: 600;
-            letter-spacing: -0.3px; margin: 0 0 12px 0;
-            text-transform: none; line-height: 1.3;
-        }
-        .modal-card p {
-            color: var(--text-dim); font-size: 0.85rem;
-            line-height: 1.5; margin: 0 0 24px 0;
-        }
-        .modal-actions { display: flex; flex-direction: column; gap: 10px; }
-        .btn-cancel {
-            width: 100%; background: #222; border: 1px solid #333;
-            color: #fff; padding: 14px; border-radius: 14px;
-            cursor: pointer; font-size: 0.8rem; font-weight: 600;
-            transition: background 0.25s;
-        }
-        .btn-cancel:hover { background: #2a2a2a; }
-        .btn-cancel:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+    input[type="number"]:focus,
+    input[type="text"]:focus {
+      border-color: var(--accent);
+      background: rgba(255, 255, 255, 0.08);
+    }
 
-        /* Hold-to-confirm: deliberate, can't be clicked through by accident */
-        .btn-confirm {
-            position: relative; width: 100%;
-            background: #1a1a1a; border: 1px solid var(--danger);
-            color: #fff; padding: 14px; border-radius: 14px;
-            cursor: pointer; font-size: 0.8rem; font-weight: 700;
-            overflow: hidden;
-            transition: border-color 0.3s, background 0.3s;
-            -webkit-user-select: none; user-select: none;
-            touch-action: none;
-        }
-        .btn-confirm:hover { background: #202020; }
-        .btn-confirm:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
-        .btn-confirm .htc-fill {
-            position: absolute; top: 0; bottom: 0; left: 0; width: 0;
-            background: var(--danger); opacity: 0.22;
-            transition: width 1.3s linear;
-        }
-        .btn-confirm.holding .htc-fill { width: 100%; }
-        .btn-confirm.complete { border-color: var(--success); background: rgba(6,214,160,0.12); }
-        .btn-confirm.complete .htc-fill { background: var(--success); opacity: 0.25; }
-        .btn-confirm .htc-label { position: relative; }
+    body[data-theme="light"] input[type="number"]:focus,
+    body[data-theme="light"] input[type="text"]:focus {
+      background: rgba(0, 0, 0, 0.05);
+    }
 
-        @media (max-width: 520px) {
-            .app-container { padding: 22px; border-radius: 28px; }
-            .category-row { grid-template-columns: 1.4fr 0.7fr 1.25fr 76px 34px; gap: 6px; }
-            .td-elapsed { font-size: 0.8rem; }
-            .td-budget { font-size: 0.58rem; }
-        }
-    </style>
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    input[type="number"] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+
+    /* Toggle switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle-row input {
+      display: none;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 48px;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 30px;
+      transition: background 0.3s ease;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      background: #FFFFFF;
+      border-radius: 50%;
+      transition: transform 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .toggle-row input:checked + .toggle-switch {
+      background: var(--accent);
+    }
+
+    .toggle-row input:checked + .toggle-switch::after {
+      transform: translateX(20px);
+    }
+
+    /* Action text buttons */
+    .action-btns {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .text-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 8px 0;
+      transition: color 0.2s ease, transform 0.15s ease;
+    }
+
+    .text-btn:hover {
+      color: var(--accent);
+    }
+
+    .text-btn:active {
+      transform: scale(0.96);
+    }
+
+    .warning-text {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--warning);
+      display: none;
+    }
+
+    .warning-text.show {
+      display: block;
+    }
+
+    /* Main timer list */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .timer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 0 16px 150px 16px;
+      flex: 1;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .timer-card {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-radius: 18px;
+      padding: 24px 22px;
+      box-shadow: var(--card-shadow);
+      cursor: pointer;
+      color: #FFFFFF;
+      overflow: hidden;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.15s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .timer-card:active {
+      transform: scale(0.96);
+    }
+
+    .timer-card.active {
+      animation: pulseRing 2.2s infinite;
+    }
+
+    @keyframes pulseRing {
+      0% {
+        box-shadow: var(--card-shadow), 0 0 0 0 rgba(255, 255, 255, 0.35);
+      }
+      70% {
+        box-shadow: var(--card-shadow), 0 0 0 10px rgba(255, 255, 255, 0);
+      }
+      100% {
+        box-shadow: var(--card-shadow), 0 0 0 0 rgba(255, 255, 255, 0);
+      }
+    }
+
+    .card-left {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      flex: 1;
+      padding-right: 12px;
+    }
+
+    .timer-name {
+      font-family: inherit;
+      font-size: 23px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #FFFFFF;
+      background: transparent;
+      border: none;
+      padding: 0;
+      margin: 0;
+      width: 100%;
+      outline: none;
+    }
+
+    .timer-name::placeholder {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    .timer-budget {
+      font-size: 14px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.75);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .budget-input {
+      font-family: inherit;
+      width: 58px;
+      font-size: 14px;
+      font-weight: 700;
+      background: rgba(0, 0, 0, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 4px 6px;
+      color: #FFFFFF;
+      text-align: center;
+      outline: none;
+    }
+
+    .budget-input.pct {
+      width: 48px;
+    }
+
+    .budget-input:focus {
+      border-color: rgba(255, 255, 255, 0.5);
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .budget-tag {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .card-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      min-width: 120px;
+    }
+
+    .timer-time {
+      font-size: 46px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      letter-spacing: -1px;
+      color: #FFFFFF;
+      transition: color 0.3s ease;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #FFFFFF;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+    }
+
+    .delete-btn {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      background: rgba(0, 0, 0, 0.2);
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0 0 2px 0;
+      transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    .delete-btn:hover {
+      background: rgba(0, 0, 0, 0.35);
+      color: #FFFFFF;
+    }
+
+    .delete-btn:active {
+      transform: scale(0.9);
+    }
+
+    /* Bottom drawer */
+    .bottom-drawer {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 428px;
+      background: var(--drawer-bg);
+      border-radius: 20px 20px 0 0;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.2);
+      padding: 24px 0 36px 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 30;
+    }
+
+    .reset-pill {
+      position: relative;
+      border: none;
+      border-radius: 30px;
+      padding: 16px 36px;
+      background: var(--pill-bg);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      transition: transform 0.15s ease;
+    }
+
+    .reset-pill:active {
+      transform: scale(0.96);
+    }
+
+    .reset-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      opacity: 0.85;
+      border-radius: 30px;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .reset-text {
+      position: relative;
+      z-index: 1;
+      pointer-events: none;
+    }
+  </style>
 </head>
 <body>
+  <div class="app">
+    <header class="top-banner">
+      <h1>Time Budget</h1>
+      <button class="theme-btn" id="theme-btn" aria-label="Toggle theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 7a5 5 0 100 10 5 5 0 000-10zm0-5a1 1 0 011 1v2a1 1 0 11-2 0V3a1 1 0 011-1zm0 17a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zM5.64 6.05a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42L5.64 7.46a1 1 0 010-1.41zm12.02 12.02a1 1 0 011.41 0l1.42 1.41a1 1 0 11-1.42 1.42l-1.41-1.42a1 1 0 010-1.41zM3 12a1 1 0 011-1h2a1 1 0 110 2H4a1 1 0 01-1-1zm17 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM6.05 18.36a1 1 0 010 1.41l-1.41 1.42a1 1 0 11-1.42-1.42l1.42-1.41a1 1 0 011.41 0zm12.02-12.02a1 1 0 010 1.41l-1.41 1.42a1 1 0 11-1.42-1.42l1.42-1.41a1 1 0 011.41 0z"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+      </button>
+    </header>
 
-<div class="app-container">
-    <h1>Time Budget</h1>
-
-    <div class="input-group">
-        <label class="section-label">Total Bank of Time (Hours)</label>
-        <input type="number" id="totalBank" value="24" min="0" step="0.25">
-        <div class="toggle-row">
-            <label class="switch">
-                <input type="checkbox" id="multitask">
-                <span class="track"></span>
-            </label>
-            <span class="toggle-label">Allow overlapping timers (off = starting one stops the rest)</span>
+    <main class="content">
+      <section class="glass-panels">
+        <div class="field">
+          <label for="total-bank">Total Bank of Time (Hours)</label>
+          <input id="total-bank" type="number" step="0.5" min="0" value="8">
         </div>
-    </div>
 
-    <label class="section-label">Fixed Blocks (Hours)</label>
-    <div id="fixedContainer"></div>
-    <button class="btn-add" id="addFixedBtn">+ Add Fixed Block</button>
+        <label class="toggle-row" for="overlap-toggle">
+          <span class="toggle-label">Allow overlapping timers</span>
+          <input id="overlap-toggle" type="checkbox">
+          <span class="toggle-switch"></span>
+        </label>
 
-    <label class="section-label">Variable Allocations (%)</label>
-    <div id="remainingCaption" class="section-caption"></div>
-    <div id="percentContainer"></div>
-    <button class="btn-add" id="addPercentBtn">+ Add Percentage Category</button>
-
-    <div class="visualizer-container" id="visualizer"></div>
-    <div id="vizCaption" class="viz-caption"></div>
-    <div id="warning" class="total-warning">Total percentage exceeds 100%!</div>
-
-    <div class="results-list" id="resultsList"></div>
-
-    <button class="btn-reset" id="resetBtn">Reset the Day</button>
-</div>
-
-<div class="toast" id="toast">
-    <span id="toastLabel"></span>
-    <button id="toastUndo">Undo</button>
-</div>
-
-<div class="modal-backdrop" id="resetModal" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
-    <div class="modal-card">
-        <h2 id="resetTitle">Are you ready to start a new day?</h2>
-        <p>This zeros every timer and stops anything still running. Your categories and budgets stay put.</p>
-        <div class="modal-actions">
-            <button class="btn-confirm" id="modalConfirm" aria-label="Hold to start a new day">
-                <span class="htc-fill"></span>
-                <span class="htc-label">Hold to start new day</span>
-            </button>
-            <button class="btn-cancel" id="modalCancel">Not yet</button>
+        <div class="action-btns">
+          <button id="add-fixed" class="text-btn" type="button">+ Add Fixed Block</button>
+          <button id="add-percent" class="text-btn" type="button">+ Add Percentage Category</button>
         </div>
-    </div>
-</div>
 
-<script>
-    "use strict";
+        <p id="pct-warning" class="warning-text">Total percentage exceeds 100%!</p>
+      </section>
 
-    const STORAGE_KEY = "overlapBudgeter.v1";
-    const PALETTE = ['#ef476f', '#11f1f7', '#bc8efc', '#fb8500', '#8338ec', '#f72585', '#3a0ca3'];
-    let colorIdx = 0;
-    function pickColor() { return PALETTE[colorIdx++ % PALETTE.length]; }
-    function uid() { return Math.random().toString(36).slice(2, 10); }
-    function nowMs() { return Date.now(); }
+      <section id="timer-list" class="timer-list"></section>
+    </main>
 
-    // --- State ---
-    // Each block: { id, name, hours|percent, banked(seconds), startedAt(ms|null), color }
-    let state = {
-        totalBank: 24,
-        multitask: false,
-        fixed: [],
-        percent: [],
-    };
+    <footer class="bottom-drawer">
+      <button id="reset-pill" class="reset-pill" type="button">
+        <span class="reset-fill"></span>
+        <span class="reset-text">Hold to start new day</span>
+      </button>
+    </footer>
+  </div>
 
-    let undoState = null;
-    let undoTimer = null;
+  <script>
+    (function () {
+      'use strict';
 
-    // Stable element refs so we never rebuild inputs mid-typing.
-    const rowEls = {};   // id -> { row, timer, btn }
-    const segEls = {};   // id -> segment div
-    let freeSeg = null;
+      const STORAGE_KEY = 'overlap_time_budgeter_state_v1';
 
-    // --- Persistence ---
-    function save() {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
-    }
-    function load() {
+      const defaultState = {
+        theme: 'dark',
+        totalBank: 8,
+        overlap: false,
+        timers: [
+          { id: 't_default_1', type: 'fixed', name: 'Lunch', value: 1, elapsedSec: 0, active: false, activeSince: null, baseElapsed: 0 },
+          { id: 't_default_2', type: 'percent', name: 'Deep Work', value: 50, elapsedSec: 0, active: false, activeSince: null, baseElapsed: 0 }
+        ]
+      };
+
+      let state = JSON.parse(JSON.stringify(defaultState));
+
+      const els = {
+        body: document.body,
+        themeBtn: document.getElementById('theme-btn'),
+        totalBank: document.getElementById('total-bank'),
+        overlapToggle: document.getElementById('overlap-toggle'),
+        addFixed: document.getElementById('add-fixed'),
+        addPercent: document.getElementById('add-percent'),
+        pctWarning: document.getElementById('pct-warning'),
+        timerList: document.getElementById('timer-list'),
+        resetPill: document.getElementById('reset-pill'),
+        resetFill: document.querySelector('.reset-fill')
+      };
+
+      function loadState() {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (!raw) return false;
-            const s = JSON.parse(raw);
-            if (s && typeof s === 'object') {
-                state = {
-                    totalBank: typeof s.totalBank === 'number' ? s.totalBank : 24,
-                    multitask: !!s.multitask,
-                    fixed: Array.isArray(s.fixed) ? s.fixed : [],
-                    percent: Array.isArray(s.percent) ? s.percent : [],
-                };
-                return true;
-            }
-        } catch (e) {}
-        return false;
-    }
-
-    function seedDefaults() {
-        state.fixed = [
-            { id: uid(), name: 'Lunch', hours: 1, banked: 0, startedAt: null, color: pickColor() },
-            { id: uid(), name: 'Dinner', hours: 1, banked: 0, startedAt: null, color: pickColor() },
-        ];
-        state.percent = [
-            { id: uid(), name: 'Bills', percent: 50, banked: 0, startedAt: null, color: pickColor() },
-            { id: uid(), name: 'Fun', percent: 10, banked: 0, startedAt: null, color: pickColor() },
-        ];
-    }
-
-    // --- Timing (timestamp-based: survives reload, background throttling, sleep) ---
-    function elapsedOf(b) {
-        return b.banked + (b.startedAt ? Math.floor((nowMs() - b.startedAt) / 1000) : 0);
-    }
-    function startBlock(b) {
-        if (b.startedAt) return;
-        if (!state.multitask) {
-            [...state.fixed, ...state.percent].forEach(o => {
-                if (o !== b && o.startedAt) stopBlock(o);
-            });
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const saved = JSON.parse(raw);
+            state.theme = saved.theme || defaultState.theme;
+            state.totalBank = typeof saved.totalBank === 'number' ? saved.totalBank : defaultState.totalBank;
+            state.overlap = typeof saved.overlap === 'boolean' ? saved.overlap : defaultState.overlap;
+            state.timers = Array.isArray(saved.timers) ? saved.timers : JSON.parse(JSON.stringify(defaultState.timers));
+          }
+        } catch (e) {
+          console.warn('Failed to load saved state', e);
         }
-        b.startedAt = nowMs();
-    }
-    function stopBlock(b) {
-        if (!b.startedAt) return;
-        b.banked += Math.floor((nowMs() - b.startedAt) / 1000);
-        b.startedAt = null;
-    }
-    function toggleBlock(listKey, id) {
-        const b = state[listKey].find(x => x.id === id);
-        if (!b) return;
-        if (b.startedAt) stopBlock(b); else startBlock(b);
-        save();
-        updateLive();
-    }
+      }
 
-    // --- Budget helpers ---
-    function budgetSecFixed(b) { return (b.hours || 0) * 3600; }
-    function budgetSecPercent(b, remainingHours) { return remainingHours * (b.percent || 0) / 100 * 3600; }
-
-    // Color carries state: on-track = base, approaching budget = amber, over = red.
-    function ratioColor(base, budgetSec, actualSec) {
-        if (budgetSec <= 0) return base;
-        const r = actualSec / budgetSec;
-        if (r >= 1) return '#ff4d4d';
-        if (r >= 0.85) return '#ffd166';
-        return base;
-    }
-
-    // --- Formatting ---
-    function formatHumanTime(totalSeconds) {
-        if (totalSeconds <= 0) return "0 mins";
-        const h = Math.floor(totalSeconds / 3600);
-        const m = Math.floor((totalSeconds % 3600) / 60);
-        let result = [];
-        if (h > 0) result.push(`${h} hour${h > 1 ? 's' : ''}`);
-        if (m > 0) result.push(`${m} min${m > 1 ? 's' : ''}`);
-        return result.join(' ') || "0 mins";
-    }
-    function formatDigitalTime(seconds) {
-        seconds = Math.max(0, Math.floor(seconds));
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = seconds % 60;
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    function formatCompact(totalSeconds) {
-        totalSeconds = Math.max(0, Math.floor(totalSeconds));
-        const h = Math.floor(totalSeconds / 3600);
-        const m = Math.floor((totalSeconds % 3600) / 60);
-        if (h > 0 && m > 0) return `${h}h ${m}m`;
-        if (h > 0) return `${h}h`;
-        if (m > 0) return `${m}m`;
-        return '0m';
-    }
-    function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, c => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[c]));
-    }
-
-    // --- Add / remove ---
-    function addFixed() {
-        const b = { id: uid(), name: 'New Block', hours: 1, banked: 0, startedAt: null, color: pickColor() };
-        state.fixed.push(b);
-        save(); renderStructure(); focusName(b.id);
-    }
-    function addPercent() {
-        const b = { id: uid(), name: 'New Cat', percent: 0, banked: 0, startedAt: null, color: pickColor() };
-        state.percent.push(b);
-        save(); renderStructure(); focusName(b.id);
-    }
-    function removeBlock(listKey, id) {
-        const list = state[listKey];
-        const idx = list.findIndex(x => x.id === id);
-        if (idx < 0) return;
-        const block = list[idx];
-        stopBlock(block);            // bank whatever was running so undo preserves it
-        list.splice(idx, 1);
-        save(); renderStructure();
-        showUndo(listKey, idx, block);
-    }
-    function showUndo(listKey, idx, block) {
-        undoState = { listKey, idx, block };
-        const toast = document.getElementById('toast');
-        document.getElementById('toastLabel').textContent = `Removed “${block.name}”`;
-        toast.classList.add('show');
-        clearTimeout(undoTimer);
-        undoTimer = setTimeout(() => {
-            undoState = null;
-            toast.classList.remove('show');
-        }, 6000);
-    }
-    function doUndo() {
-        if (!undoState) return;
-        const { listKey, idx, block } = undoState;
-        state[listKey].splice(idx, 0, block);
-        undoState = null;
-        clearTimeout(undoTimer);
-        document.getElementById('toast').classList.remove('show');
-        save(); renderStructure();
-    }
-    function focusName(id) {
-        const row = document.querySelector(`[data-id="${id}"]`);
-        if (row) { const inp = row.querySelector('input[type="text"]'); if (inp) inp.focus(); }
-    }
-
-    // --- Field updates (no structural rebuild — preserves focus while typing) ---
-    function updateField(listKey, id, field, value) {
-        const b = state[listKey].find(x => x.id === id);
-        if (!b) return;
-        if (field === 'hours' || field === 'percent') b[field] = parseFloat(value) || 0;
-        else b[field] = value;
-        save();
-        updateLive();
-    }
-
-    // --- Rendering ---
-    function buildRow(listKey, b, isPercent) {
-        const row = document.createElement('div');
-        row.className = 'category-row ' + (isPercent ? 'is-percent' : 'is-fixed');
-        row.dataset.id = b.id;
-
-        const name = document.createElement('input');
-        name.type = 'text'; name.value = b.name;
-        name.addEventListener('input', () => updateField(listKey, b.id, 'name', name.value));
-
-        const num = document.createElement('input');
-        num.type = 'number'; num.min = 0; num.step = isPercent ? 1 : 0.25;
-        num.value = isPercent ? b.percent : b.hours;
-        num.placeholder = isPercent ? '%' : 'hrs';
-        num.addEventListener('input', () => updateField(listKey, b.id, isPercent ? 'percent' : 'hours', num.value));
-
-        const disp = document.createElement('div');
-        disp.className = 'timer-display';
-        const dispElapsed = document.createElement('div');
-        dispElapsed.className = 'td-elapsed';
-        const dispBudget = document.createElement('div');
-        dispBudget.className = 'td-budget';
-        disp.append(dispElapsed, dispBudget);
-
-        const btn = document.createElement('button');
-        btn.className = 'btn-timer';
-        btn.addEventListener('click', () => toggleBlock(listKey, b.id));
-
-        const rm = document.createElement('button');
-        rm.className = 'btn-remove'; rm.textContent = '×';
-        rm.addEventListener('click', () => removeBlock(listKey, b.id));
-
-        row.append(name, num, disp, btn, rm);
-        return row;
-    }
-
-    function renderStructure() {
-        const fC = document.getElementById('fixedContainer');
-        const pC = document.getElementById('percentContainer');
-        const viz = document.getElementById('visualizer');
-        fC.innerHTML = ''; pC.innerHTML = ''; viz.innerHTML = '';
-        for (const k in rowEls) delete rowEls[k];
-        for (const k in segEls) delete segEls[k];
-
-        const attach = (container, listKey, isPercent) => {
-            state[listKey].forEach(b => {
-                const row = buildRow(listKey, b, isPercent);
-                container.appendChild(row);
-                rowEls[b.id] = {
-                    row,
-                    timer: row.querySelector('.timer-display'),
-                    timerElapsed: row.querySelector('.td-elapsed'),
-                    timerBudget: row.querySelector('.td-budget'),
-                    btn: row.querySelector('.btn-timer'),
-                };
-                const seg = document.createElement('div');
-                seg.className = 'segment';
-                viz.appendChild(seg);
-                segEls[b.id] = seg;
-            });
-        };
-        attach(fC, 'fixed', false);
-        attach(pC, 'percent', true);
-
-        freeSeg = document.createElement('div');
-        freeSeg.className = 'segment free';
-        freeSeg.style.borderBottom = '2px solid transparent';
-        viz.appendChild(freeSeg);
-
-        updateLive();
-    }
-
-    function updateRow(b, isPercent, remainingHours) {
-        const e = rowEls[b.id];
-        if (!e) return;
-        const sec = elapsedOf(b);
-        const running = !!b.startedAt;
-        const budget = isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b);
-        e.timerElapsed.textContent = formatDigitalTime(sec);
-        e.timerBudget.textContent = 'of ' + formatCompact(budget);
-        e.timerElapsed.style.color = ratioColor(b.color, budget, sec);
-        e.row.classList.toggle('active', running);
-        // Running row lights up in its own identity color; idle falls back to the section rail.
-        e.row.style.borderLeftColor = running ? b.color : '';
-        e.row.style.borderLeftStyle = running ? 'solid' : '';
-        e.btn.classList.toggle('running', running);
-        e.btn.textContent = running ? 'Stop' : 'Start';
-    }
-
-    function recalc() {
-        const bank = parseFloat(document.getElementById('totalBank').value) || 0;
-        const totalFixed = state.fixed.reduce((s, b) => s + (b.hours || 0), 0);
-        const remaining = Math.max(0, bank - totalFixed);
-        document.getElementById('remainingCaption').textContent =
-            remaining > 0 ? 'splitting ' + formatHumanTime(remaining * 3600) + ' after fixed blocks'
-                          : 'no time left after fixed blocks';
-        let totalPercent = 0;
-        state.percent.forEach(b => totalPercent += (b.percent || 0));
-
-        // Fixed segments: identity fill, status as a 2px baseline (transparent / amber / red).
-        state.fixed.forEach(b => {
-            const seg = segEls[b.id]; if (!seg) return;
-            const w = bank > 0 ? (b.hours / bank) * 100 : 0;
-            seg.style.width = w + '%';
-            const bsec = budgetSecFixed(b);
-            seg.style.backgroundColor = b.color;
-            seg.style.borderBottom = '2px solid ' + ratioColor('transparent', bsec, elapsedOf(b));
-            seg.title = b.name + ': ' + formatHumanTime(bsec) + ' budget · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-        });
-
-        // Percent segments: identity fill, status baseline; tooltip names the hour equivalent.
-        state.percent.forEach(b => {
-            const seg = segEls[b.id]; if (!seg) return;
-            const w = bank > 0 ? (b.percent / 100) * (remaining / bank) * 100 : 0;
-            seg.style.width = w + '%';
-            const bsec = budgetSecPercent(b, remaining);
-            seg.style.backgroundColor = b.color;
-            seg.style.borderBottom = '2px solid ' + ratioColor('transparent', bsec, elapsedOf(b));
-            seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-        });
-
-        // Free / unallocated slack
-        const freeHours = remaining - remaining * (Math.min(totalPercent, 100) / 100);
-        freeSeg.style.width = (bank > 0 ? Math.max(0, freeHours / bank) * 100 : 0) + '%';
-        freeSeg.title = 'Free of remaining / unallocated: ' + formatHumanTime(freeHours * 3600);
-        document.getElementById('vizCaption').textContent =
-            formatHumanTime(remaining * 3600) + ' left to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
-
-        document.getElementById('warning').style.display = totalPercent > 100 ? 'block' : 'none';
-        buildResults(bank, remaining, totalPercent);
-        return { bank, remaining, totalPercent };
-    }
-
-    function buildResults(bank, remaining, totalPercent) {
-        const list = document.getElementById('resultsList');
-        // Rebuild only when the set of blocks changes (add/remove/undo);
-        // otherwise update text in place so running timers don't churn the DOM.
-        const sig = state.fixed.map(b => b.id).join(',') + '|' + state.percent.map(b => b.id).join(',');
-        if (list.dataset.sig !== sig) {
-            list.dataset.sig = sig;
-            list.innerHTML = '';
-            state.fixed.forEach(b => {
-                const item = document.createElement('div');
-                item.className = 'result-item';
-                item.dataset.id = b.id;
-                item.innerHTML = `<span>${escapeHtml(b.name)} (Fixed)</span><span><span class="budget-val" style="color:var(--text-dim)">Budget 0 mins</span> | <span class="time-val">Actual 0 mins</span></span>`;
-                list.appendChild(item);
-            });
-            state.percent.forEach(b => {
-                const item = document.createElement('div');
-                item.className = 'result-item';
-                item.dataset.id = b.id;
-                item.innerHTML = `<span>${escapeHtml(b.name)} (0%)</span><span><span class="budget-val" style="color:var(--text-dim)">Budget 0 mins</span> | <span class="time-val">Actual 0 mins</span></span>`;
-                list.appendChild(item);
-            });
-            const free = document.createElement('div');
-            free.className = 'result-item free-row';
-            free.innerHTML = `<span style="color:var(--text-dim)">Free of remaining / unallocated</span><span class="time-val" style="color:var(--text-dim)">0 mins</span>`;
-            list.appendChild(free);
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+          console.warn('Failed to save state', e);
         }
+      }
 
-        // Update text in place (no innerHTML churn while timers run)
-        state.fixed.forEach(b => {
-            const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
-            if (!item) return;
-            const budget = budgetSecFixed(b);
-            const sec = elapsedOf(b);
-            item.querySelector('span:first-child').textContent = `${b.name} (Fixed)`;
-            item.querySelector('.budget-val').textContent = `Budget ${formatHumanTime(budget)}`;
-            const tv = item.querySelector('.time-val');
-            tv.textContent = `Actual ${formatHumanTime(sec)}`;
-            tv.style.color = ratioColor(b.color, budget, sec);
-        });
-        state.percent.forEach(b => {
-            const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
-            if (!item) return;
-            const budget = budgetSecPercent(b, remaining);
-            const sec = elapsedOf(b);
-            item.querySelector('span:first-child').textContent = `${b.name} (${b.percent}%)`;
-            item.querySelector('.budget-val').textContent = `Budget ${formatHumanTime(budget)}`;
-            const tv = item.querySelector('.time-val');
-            tv.textContent = `Actual ${formatHumanTime(sec)}`;
-            tv.style.color = ratioColor(b.color, budget, sec);
-        });
-        const freeRow = list.querySelector('.free-row');
-        const freeH = Math.max(0, remaining - remaining * Math.min(totalPercent, 100) / 100);
-        if (freeRow) {
-            freeRow.style.display = freeH > 0 ? '' : 'none';
-            freeRow.querySelector('.time-val').textContent = formatHumanTime(freeH * 3600);
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function pad(n) {
+        return n.toString().padStart(2, '0');
+      }
+
+      function formatTime(totalSeconds) {
+        const secs = Math.floor(totalSeconds);
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        return `${pad(h)}:${pad(m)}:${pad(s)}`;
+      }
+
+      function formatHours(hours) {
+        return hours.toFixed(1);
+      }
+
+      function hexToRgb(hex) {
+        const bigint = parseInt(hex.slice(1), 16);
+        return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+      }
+
+      function lerp(a, b, t) {
+        return Math.round(a + (b - a) * t);
+      }
+
+      function interpolateColor(c1, c2, t) {
+        return `rgb(${lerp(c1[0], c2[0], t)}, ${lerp(c1[1], c2[1], t)}, ${lerp(c1[2], c2[2], t)})`;
+      }
+
+      function getCascadeColor(index, total) {
+        if (total <= 1) return '#1A1F26';
+        const t = index / (total - 1);
+        const c1 = hexToRgb('#1A1F26');
+        const c2 = hexToRgb('#4A352F');
+        const c3 = hexToRgb('#D33C29');
+        if (t < 0.5) {
+          return interpolateColor(c1, c2, t * 2);
         }
-    }
+        return interpolateColor(c2, c3, (t - 0.5) * 2);
+      }
 
-    function updateLive() {
-        const { remaining } = recalc();
-        state.fixed.forEach(b => updateRow(b, false, remaining));
-        state.percent.forEach(b => updateRow(b, true, remaining));
-    }
+      function getElapsed(timer) {
+        if (timer.active && timer.activeSince) {
+          return timer.baseElapsed + (Date.now() - timer.activeSince) / 1000;
+        }
+        return timer.elapsedSec;
+      }
 
-    // --- Reset the day: zero out all time, keep the structure ---
-    function resetDay() {
-        [...state.fixed, ...state.percent].forEach(b => {
-            b.banked = 0;
-            b.startedAt = null;
+      function getBudgetHours(timer) {
+        if (timer.type === 'fixed') return timer.value;
+        return state.totalBank * (timer.value / 100);
+      }
+
+      function updatePctWarning() {
+        const totalPct = state.timers
+          .filter(t => t.type === 'percent')
+          .reduce((sum, t) => sum + (typeof t.value === 'number' ? t.value : 0), 0);
+        els.pctWarning.classList.toggle('show', totalPct > 100);
+      }
+
+      function updateBudgetDisplays() {
+        state.timers.forEach(timer => {
+          if (timer.type !== 'percent') return;
+          const card = document.querySelector(`.timer-card[data-id="${timer.id}"]`);
+          if (!card) return;
+          const hoursSpan = card.querySelector('.budget-hours');
+          if (hoursSpan) {
+            hoursSpan.textContent = formatHours(getBudgetHours(timer)) + 'h';
+          }
         });
-        save();
-        renderStructure();
-    }
+      }
 
-    // --- Hold-to-confirm modal ---
-    const HOLD_MS = 1300;
-    let holding = false;
-    let completed = false;
-    let holdTimer = null;
+      function createTimerCard(timer, index) {
+        const el = document.createElement('div');
+        el.className = `timer-card ${timer.active ? 'active' : ''}`;
+        el.dataset.id = timer.id;
+        el.style.backgroundColor = getCascadeColor(index, state.timers.length);
 
-    function openResetModal() {
-        document.getElementById('resetModal').classList.add('show');
-        // Safe default: focus the non-destructive action.
-        document.getElementById('modalCancel').focus();
-    }
-    function closeResetModal() {
-        cancelHold();
-        document.getElementById('resetModal').classList.remove('show');
-    }
-    function beginHold() {
-        if (holding || completed) return;
-        holding = true;
-        document.getElementById('modalConfirm').classList.add('holding');
-        holdTimer = setTimeout(finishHold, HOLD_MS);
-    }
-    function cancelHold() {
-        if (completed) return;
-        holding = false;
-        clearTimeout(holdTimer);
-        document.getElementById('modalConfirm').classList.remove('holding');
-    }
-    function finishHold() {
-        completed = true;
-        holding = false;
-        const btn = document.getElementById('modalConfirm');
-        btn.classList.add('complete');
-        btn.querySelector('.htc-label').textContent = 'New day started';
-        setTimeout(() => {
-            resetDay();
-            closeResetModal();
-            // restore the confirm button for next time
-            btn.classList.remove('holding', 'complete');
-            btn.querySelector('.htc-label').textContent = 'Hold to start new day';
-            completed = false;
-        }, 600);
-    }
+        const budgetHtml = timer.type === 'fixed'
+          ? `Budget: <input class="budget-input no-toggle" type="number" step="0.5" min="0" value="${timer.value}">h <span class="budget-tag">fixed</span>`
+          : `Budget: <span class="budget-hours">${formatHours(getBudgetHours(timer))}h</span> (<input class="budget-input pct no-toggle" type="number" step="5" min="0" max="100" value="${timer.value}">%)`;
 
-    // --- Init ---
-    function init() {
-        const had = load();
-        if (!had) seedDefaults();
+        el.innerHTML = `
+          <div class="card-left">
+            <input class="timer-name no-toggle" type="text" value="${escapeHtml(timer.name)}" placeholder="Task name" autocomplete="off">
+            <div class="timer-budget">${budgetHtml}</div>
+          </div>
+          <div class="card-right">
+            <div class="timer-time" data-id="${timer.id}">${formatTime(getElapsed(timer))}</div>
+            ${timer.active ? '<div class="status-dot"></div>' : ''}
+          </div>
+          <button class="delete-btn no-toggle" type="button" aria-label="Delete timer">×</button>
+        `;
 
-        const bankInput = document.getElementById('totalBank');
-        bankInput.value = state.totalBank;
-        bankInput.addEventListener('input', () => {
-            state.totalBank = parseFloat(bankInput.value) || 0;
-            save(); updateLive();
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('.no-toggle')) return;
+          toggleTimer(timer.id);
         });
 
-        const mt = document.getElementById('multitask');
-        mt.checked = state.multitask;
-        mt.addEventListener('change', () => { state.multitask = mt.checked; save(); });
-
-        document.getElementById('addFixedBtn').addEventListener('click', addFixed);
-        document.getElementById('addPercentBtn').addEventListener('click', addPercent);
-        document.getElementById('toastUndo').addEventListener('click', doUndo);
-
-        // Reset the day — modal + hold-to-confirm
-        const resetModal = document.getElementById('resetModal');
-        const confirmBtn = document.getElementById('modalConfirm');
-        document.getElementById('resetBtn').addEventListener('click', openResetModal);
-        document.getElementById('modalCancel').addEventListener('click', closeResetModal);
-        resetModal.addEventListener('click', (e) => { if (e.target === resetModal) closeResetModal(); });
-
-        // Pointer: press and hold to confirm.
-        confirmBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); beginHold(); });
-        confirmBtn.addEventListener('pointerup', cancelHold);
-        confirmBtn.addEventListener('pointerleave', cancelHold);
-        confirmBtn.addEventListener('pointercancel', cancelHold);
-
-        // Keyboard: hold Enter/Space to confirm; Esc cancels.
-        confirmBtn.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginHold(); }
-        });
-        confirmBtn.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cancelHold(); }
-        });
-        confirmBtn.addEventListener('blur', cancelHold);
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && resetModal.classList.contains('show')) closeResetModal();
+        const nameInput = el.querySelector('.timer-name');
+        nameInput.addEventListener('input', (e) => {
+          timer.name = e.target.value;
+          saveState();
         });
 
-        // Keyboard: spacebar toggles whichever row is focused's timer; Ctrl/Cmd+Z undoes a remove.
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-                if (undoState) { e.preventDefault(); doUndo(); }
-                return;
-            }
-            if (e.key === ' ' && document.activeElement && document.activeElement.closest('.category-row')) {
-                const row = document.activeElement.closest('.category-row');
-                // Only treat as timer toggle if the focused element is the button itself,
-                // so space doesn't hijack typing in inputs.
-                if (document.activeElement.classList.contains('btn-timer')) {
-                    e.preventDefault();
-                    const id = row.dataset.id;
-                    const listKey = row.closest('#percentContainer') ? 'percent' : 'fixed';
-                    toggleBlock(listKey, id);
-                }
-            }
+        const valueInput = el.querySelector('.budget-input');
+        valueInput.addEventListener('input', (e) => {
+          let v = parseFloat(e.target.value);
+          if (!Number.isFinite(v) || v < 0) v = 0;
+          timer.value = v;
+          if (timer.type === 'percent') {
+            updateBudgetDisplays();
+            updatePctWarning();
+          }
+          saveState();
         });
 
-        renderStructure();
-        setInterval(updateLive, 500);
-        // Refresh immediately when returning to the tab (timers are timestamp-based, so this just re-renders).
-        document.addEventListener('visibilitychange', () => { if (!document.hidden) updateLive(); });
-    }
+        const deleteBtn = el.querySelector('.delete-btn');
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteTimer(timer.id);
+        });
 
-    init();
-</script>
+        return el;
+      }
 
+      function renderTimers() {
+        els.timerList.innerHTML = '';
+        if (state.timers.length === 0) {
+          els.timerList.innerHTML = '<div class="empty-state">Tap “+ Add” to create your first time block.</div>';
+        } else {
+          state.timers.forEach((timer, index) => {
+            els.timerList.appendChild(createTimerCard(timer, index));
+          });
+        }
+        updatePctWarning();
+        updateBudgetDisplays();
+      }
+
+      function toggleTimer(id) {
+        const timer = state.timers.find(t => t.id === id);
+        if (!timer) return;
+
+        if (timer.active) {
+          timer.elapsedSec = getElapsed(timer);
+          timer.active = false;
+          timer.activeSince = null;
+          timer.baseElapsed = timer.elapsedSec;
+        } else {
+          if (!state.overlap) {
+            state.timers.forEach(t => {
+              if (t.active) {
+                t.elapsedSec = getElapsed(t);
+                t.active = false;
+                t.activeSince = null;
+                t.baseElapsed = t.elapsedSec;
+              }
+            });
+          }
+          timer.baseElapsed = timer.elapsedSec;
+          timer.activeSince = Date.now();
+          timer.active = true;
+        }
+        saveState();
+        renderTimers();
+      }
+
+      function addTimer(type, value, name) {
+        const id = 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        state.timers.push({
+          id,
+          type,
+          name,
+          value,
+          elapsedSec: 0,
+          active: false,
+          activeSince: null,
+          baseElapsed: 0
+        });
+        saveState();
+        renderTimers();
+      }
+
+      function deleteTimer(id) {
+        state.timers = state.timers.filter(t => t.id !== id);
+        saveState();
+        renderTimers();
+      }
+
+      function resetDay() {
+        state.timers.forEach(t => {
+          t.active = false;
+          t.activeSince = null;
+          t.elapsedSec = 0;
+          t.baseElapsed = 0;
+        });
+        saveState();
+        renderTimers();
+      }
+
+      // Live tick loop
+      setInterval(() => {
+        state.timers.forEach(timer => {
+          if (!timer.active) return;
+          timer.elapsedSec = getElapsed(timer);
+        });
+        updateDisplays();
+      }, 250);
+
+      function updateDisplays() {
+        state.timers.forEach(timer => {
+          const timeEl = document.querySelector(`.timer-time[data-id="${timer.id}"]`);
+          if (timeEl) timeEl.textContent = formatTime(getElapsed(timer));
+        });
+      }
+
+      // Inputs / controls
+      els.totalBank.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        state.totalBank = Number.isFinite(v) && v >= 0 ? v : 0;
+        updateBudgetDisplays();
+        saveState();
+      });
+
+      els.overlapToggle.addEventListener('change', (e) => {
+        state.overlap = e.target.checked;
+        saveState();
+      });
+
+      els.addFixed.addEventListener('click', () => {
+        addTimer('fixed', 1, 'New Fixed Block');
+      });
+
+      els.addPercent.addEventListener('click', () => {
+        addTimer('percent', 20, 'New Category');
+      });
+
+      // Theme toggle
+      function applyTheme() {
+        els.body.dataset.theme = state.theme;
+      }
+
+      els.themeBtn.addEventListener('click', () => {
+        state.theme = state.theme === 'dark' ? 'light' : 'dark';
+        applyTheme();
+        saveState();
+      });
+
+      // Hold-to-reset pill
+      let holdingReset = false;
+      let resetFired = false;
+
+      function startHold(e) {
+        e.preventDefault();
+        holdingReset = true;
+        resetFired = false;
+        els.resetFill.style.transition = 'width 1.5s linear';
+        els.resetFill.style.width = '100%';
+      }
+
+      function cancelHold() {
+        if (resetFired) return;
+        holdingReset = false;
+        els.resetFill.style.transition = 'width 0.2s ease';
+        els.resetFill.style.width = '0%';
+      }
+
+      els.resetPill.addEventListener('pointerdown', startHold);
+      els.resetPill.addEventListener('pointerup', () => {
+        if (resetFired) {
+          resetFired = false;
+        } else {
+          cancelHold();
+        }
+      });
+      els.resetPill.addEventListener('pointerleave', cancelHold);
+      els.resetPill.addEventListener('pointercancel', cancelHold);
+      els.resetPill.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      els.resetFill.addEventListener('transitionend', (e) => {
+        if (e.propertyName === 'width' && holdingReset && els.resetFill.style.width === '100%') {
+          holdingReset = false;
+          resetFired = true;
+          resetDay();
+          els.resetFill.style.transition = 'none';
+          els.resetFill.style.width = '0%';
+          setTimeout(() => { resetFired = false; }, 50);
+        }
+      });
+
+      // Init
+      loadState();
+      // Never resume timers from a previous session—pause them at their stored elapsed time.
+      state.timers.forEach(t => {
+        if (t.active) {
+          t.elapsedSec = getElapsed(t);
+          t.active = false;
+          t.activeSince = null;
+          t.baseElapsed = t.elapsedSec;
+        }
+      });
+      saveState();
+      applyTheme();
+      els.totalBank.value = state.totalBank;
+      els.overlapToggle.checked = state.overlap;
+      renderTimers();
+    })();
+  </script>
 </body>
 </html>
