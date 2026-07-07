@@ -102,7 +102,8 @@
             hours: b.hours || 0,
             percent: b.percent || 0,
             time: b.time || '',   // fixed blocks only: optional HH:MM start time-of-day
-            done: !!b.done,       // fixed blocks only: marked finished → release leftover to percent splits
+            done: !!b.done,       // marked finished → fixed releases leftover to percent splits; percent settles at usedSec
+            usedSec: b.usedSec || 0,   // percent only: time declared used when marked done (drives the reflow)
             banked: b.banked || 0,
             startedAt: b.startedAt || null,
             color: b.color || pickColor(),
@@ -178,51 +179,56 @@
     function plannedSec(b) { return (b.hours || 0) * 3600; }
     function reserveSec(b) { return b.done ? Math.min(plannedSec(b), elapsedOf(b)) : plannedSec(b); }
     function budgetSecFixed(b) { return reserveSec(b); }
-    function budgetSecPercent(b, remainingHours) { return remainingHours * (b.percent || 0) / 100 * 3600; }
-
-    /* ── "Start from NOW" net resplit.
-       The day's plan gives each block a dayTarget (its plan budget). Time already
-       spent counts against it: weight = max(0, dayTarget − spent). The wall-clock
-       time left until bed is then handed out in proportion to those weights, so
-       over-spent budgets drop out (weight 0) and the future always fills now→bed
-       exactly. Returns { allocs: id→futureSec, remainingSec, totalSpentSec, dropped: [names] }. ── */
-    function dayTargetSec(b, remainingHours) {
-        const isPercent = state.percent.includes(b);
-        return isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b);
+    // A percent block's budget. Done percent blocks settle at their declared usage
+    // (usedSec); the leftover (claim − all done usage) reflows to the non-done blocks
+    // in proportion to their percent, so finishing a category hands its unused time
+    // to the rest. With no done blocks this is identical to the old per-cent formula.
+    function budgetSecPercent(b, remainingHours) {
+        const totalPct = state.percent.reduce((s, x) => s + (x.percent || 0), 0);
+        const claim = Math.max(0, remainingHours * 3600) * Math.min(100, totalPct) / 100;
+        const doneUsed = state.percent.filter(x => x.done).reduce((s, x) => s + (x.usedSec || 0), 0);
+        if (b.done) return b.usedSec || 0;
+        const pool = Math.max(0, claim - doneUsed);
+        const denom = state.percent.filter(x => !x.done).reduce((s, x) => s + (x.percent || 0), 0);
+        return denom > 0 ? pool * (b.percent || 0) / denom : 0;
     }
+
+    /* ── "Start from NOW" reflow.
+       Fixed/time blocks are NOT taken into account. The reflow pool is the wall-clock
+       time from now → bed, minus ALL currently-tracked (spent) time across every block.
+       That pool is split across the non-done percent categories in proportion to their
+       percent, so the remainder of the day fills now→bed with the flexible allocations
+       only. Done percent blocks are settled (excluded — their used time is already in
+       the spent total). Returns { allocs: id→sec, remainingSec(pool), totalSpentSec, dropped }. ── */
     function computeNowAllocations(remainingHours) {
         const { bed } = dayBoundsMin();
-        const remainingSec = Math.max(0, (bed - nowMin()) * 60);   // wall-clock now → bed
+        const wallLeftSec = Math.max(0, (bed - nowMin()) * 60);   // wall-clock now → bed
         const all = [...state.fixed, ...state.percent];
-        const weights = {};
-        let W = 0;
-        all.forEach(b => {
-            const w = Math.max(0, dayTargetSec(b, remainingHours) - elapsedOf(b));
-            weights[b.id] = w;
-            W += w;
-        });
-        const allocs = {};
-        const dropped = [];
-        all.forEach(b => {
-            allocs[b.id] = W > 0 ? remainingSec * weights[b.id] / W : 0;
-            if (weights[b.id] <= 0 && elapsedOf(b) > 0) dropped.push(b.name);
-        });
         const totalSpentSec = all.reduce((s, b) => s + elapsedOf(b), 0);
-        return { allocs, remainingSec, totalSpentSec, dropped };
+        const pool = Math.max(0, wallLeftSec - totalSpentSec);   // left after all tracked time
+        const recipients = state.percent.filter(b => !b.done);
+        const denom = recipients.reduce((s, b) => s + (b.percent || 0), 0);
+        const allocs = {};
+        state.percent.forEach(b => {
+            allocs[b.id] = (!b.done && denom > 0) ? pool * (b.percent || 0) / denom : 0;
+        });
+        return { allocs, remainingSec: pool, totalSpentSec, dropped: [] };
     }
 
     /* Shared budget/elapsed pair for a row, zen card, results row, and segment.
        NOW mode swaps in the resplit slice and counts only time spent since NOW
        was engaged; otherwise the plan target and full elapsed. */
     function rowBudget(b, isPercent, remainingHours) {
-        if (state.nowMode && liveAllocs) {
+        if (state.nowMode && liveAllocs && isPercent) {
+            // NOW reflow applies to percent blocks only; fixed blocks fall through to
+            // their plan budget (NOW doesn't take time blocks into account).
             const budget = liveAllocs.allocs[b.id] || 0;
             const baseline = state.nowBaseline[b.id] || 0;
             return { budget, secAgainst: Math.max(0, elapsedOf(b) - baseline) };
         }
         return {
             budget: isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b),
-            secAgainst: elapsedOf(b),
+            secAgainst: (isPercent && b.done) ? (b.usedSec || 0) : elapsedOf(b),
         };
     }
 
@@ -381,16 +387,21 @@
         btn.className = 'btn-timer';
         btn.addEventListener('click', () => toggleBlock(listKey, b.id));
 
-        // Fixed blocks only: a DONE toggle that releases leftover planned time to the
-        // percent splits. stopPropagation so tapping it in run mode doesn't also toggle
-        // the timer via the row handler.
+        // DONE button for every block. Fixed: toggles done (releases leftover planned
+        // time to the percent splits). Percent: opens a slider to declare time used, then
+        // settles and reflows the leftover to the other percent categories (tap again to
+        // undo). stopPropagation so tapping it in run mode doesn't also toggle the timer.
         let doneBtn = null;
-        if (!isPercent) {
-            doneBtn = document.createElement('button');
-            doneBtn.className = 'btn-done';
-            doneBtn.title = 'Mark done — release any leftover time to your other categories (tap again to undo)';
-            doneBtn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); toggleDone(b); });
-        }
+        doneBtn = document.createElement('button');
+        doneBtn.className = 'btn-done';
+        doneBtn.title = isPercent
+            ? 'Mark done — declare time used and reflow the rest to other categories (tap again to undo)'
+            : 'Mark done — release any leftover time to your other categories (tap again to undo)';
+        doneBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); ensureAudio();
+            if (isPercent) { b.done ? toggleDonePercent(b) : openDoneSlider(b); }
+            else toggleDone(b);
+        });
 
         const rm = document.createElement('button');
         rm.className = 'btn-remove'; rm.textContent = '×';
@@ -612,14 +623,13 @@
         };
 
         if (state.nowMode && liveAllocs) {
-            // NOW mode: net-resplit slices of now→bed, fixed then percent.
-            [...state.fixed, ...state.percent].forEach(b => {
-                const isPercent = state.percent.includes(b);
-                const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
+            // NOW mode: reflow slices of now→bed, percent only (fixed blocks excluded).
+            state.percent.forEach(b => {
+                const { budget, secAgainst } = rowBudget(b, true, remaining);
                 const w = dayLenSec > 0 ? budget / dayLenSec * 100 : 0;
                 placeSeg(b, cursor, w, budget, secAgainst);
                 const seg = segEls[b.id];
-                if (seg) seg.title = b.name + ' · NOW resplit ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' spent since NOW';
+                if (seg) seg.title = b.name + ' · NOW ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' since NOW';
             });
         } else {
             // Plan mode: fixed blocks at their start time (or from the cursor), then
@@ -663,7 +673,7 @@
         // Caption: NOW summary in NOW mode, plan summary otherwise.
         const caption = document.getElementById('vizCaption');
         if (state.nowMode && liveAllocs) {
-            const parts = [formatHumanTime(liveAllocs.remainingSec) + ' left until bed',
+            const parts = [formatHumanTime(liveAllocs.remainingSec) + ' left to split',
                            formatHumanTime(liveAllocs.totalSpentSec) + ' spent'];
             if (liveAllocs.dropped.length) parts.push(liveAllocs.dropped.join(', ') + ' over budget');
             caption.textContent = parts.join('  ·  ');
@@ -768,11 +778,11 @@
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
             const { budget, secAgainst } = rowBudget(b, true, remaining);
-            item.querySelector('span:first-child').textContent = `${b.name} (${b.percent}%)`;
-            item.querySelector('.budget-val').textContent = `Budget ${formatHumanTime(budget)}`;
+            item.querySelector('span:first-child').textContent = `${b.name} (${b.percent}%${b.done ? ' · done' : ''})`;
+            item.querySelector('.budget-val').textContent = `${b.done ? 'Used' : 'Budget'} ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
             tv.textContent = `Actual ${formatHumanTime(secAgainst)}`;
-            tv.style.color = ratioColor(b.color, budget, secAgainst);
+            tv.style.color = displayColor(b, budget, secAgainst);
         });
         const freeRow = list.querySelector('.free-row');
         const freeH = Math.max(0, remaining - remaining * Math.min(totalPercent, 100) / 100);
@@ -801,6 +811,9 @@
             b.alarmed = false;
             b.intervals = [];
         });
+        // A fresh day un-finishes percent categories (clear settled usage) so the
+        // reflow starts clean. (Fixed `done` is left as-is — pre-existing behavior.)
+        state.percent.forEach(b => { b.done = false; b.usedSec = 0; });
         state.nowMode = false;
         state.nowBaseline = {};
         zenOpen = false;        // a fresh day starts with zen closed; a solo start reopens it
@@ -1016,6 +1029,53 @@
         }, 600);
     }
 
+    // --- Done slider modal (percent categories) ---
+    let pendingDone = null;        // the percent block the user is settling
+    let doneSliderEl = null, doneValEl = null, doneModalEl = null;
+
+    function openDoneSlider(b) {
+        pendingDone = b;
+        if (!doneModalEl) {
+            doneModalEl = document.getElementById('doneModal');
+            doneSliderEl = document.getElementById('doneSlider');
+            doneValEl = document.getElementById('doneVal');
+        }
+        document.getElementById('doneTitle').textContent = `Mark “${b.name}” done`;
+        const budgetMin = Math.floor(budgetSecPercent(b, remainingHours()) / 60);
+        const elapsedMin = Math.floor(elapsedOf(b) / 60);
+        const maxMin = Math.max(budgetMin, elapsedMin, 0);
+        doneSliderEl.min = 0; doneSliderEl.max = maxMin; doneSliderEl.step = 1;
+        doneSliderEl.value = Math.min(elapsedMin, maxMin);
+        updateDoneVal();
+        doneModalEl.classList.add('show');
+        document.getElementById('doneCancel').focus();
+    }
+    function updateDoneVal() {
+        if (doneValEl) doneValEl.textContent = formatHumanTime((+doneSliderEl.value || 0) * 60);
+    }
+    function closeDoneModal() {
+        if (doneModalEl) doneModalEl.classList.remove('show');
+        pendingDone = null;
+    }
+    function confirmDone() {
+        const b = pendingDone;
+        if (!b) { closeDoneModal(); return; }
+        const sec = (+doneSliderEl.value || 0) * 60;
+        if (b.startedAt) stopBlock(b);          // stop any running timer before settling
+        b.done = true;
+        b.usedSec = sec;
+        save();
+        closeDoneModal();
+        updateLive();
+    }
+    // Undo: un-finish a percent category and return its leftover to the reflow.
+    function toggleDonePercent(b) {
+        b.done = false;
+        b.usedSec = 0;
+        save();
+        updateLive();
+    }
+
     // --- Init ---
     function init() {
         const had = load();
@@ -1088,6 +1148,17 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && resetModal.classList.contains('show')) closeResetModal();
             else if (e.key === 'Escape' && zenOverlay.classList.contains('show')) exitZen();
+        });
+
+        // Done slider modal (percent categories): plain click confirm, slider for used time.
+        const doneModal = document.getElementById('doneModal');
+        const doneSlider = document.getElementById('doneSlider');
+        document.getElementById('doneConfirm').addEventListener('click', confirmDone);
+        document.getElementById('doneCancel').addEventListener('click', closeDoneModal);
+        doneModal.addEventListener('click', (e) => { if (e.target === doneModal) closeDoneModal(); });
+        doneSlider.addEventListener('input', updateDoneVal);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && doneModal.classList.contains('show')) closeDoneModal();
         });
 
         // Keyboard: spacebar toggles whichever row is focused's timer; Ctrl/Cmd+Z undoes a remove.

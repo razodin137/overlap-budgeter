@@ -91,6 +91,21 @@
     </div>
 </div>
 
+<div class="modal-backdrop" id="doneModal" role="dialog" aria-modal="true" aria-labelledby="doneTitle">
+    <div class="modal-card">
+        <h2 id="doneTitle">Mark done</h2>
+        <p id="doneSub">How much time did you use? The leftover reflows to your other categories.</p>
+        <div class="done-slider-row">
+            <input type="range" id="doneSlider" min="0" max="0" step="1" value="0" aria-label="Time used in minutes">
+            <span id="doneVal">0 mins</span>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-confirm" id="doneConfirm"><span class="htc-label">Confirm</span></button>
+            <button class="btn-cancel" id="doneCancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script src="app.js"></script>
 
 </body>

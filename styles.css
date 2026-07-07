@@ -495,6 +495,13 @@
         .btn-confirm.complete .htc-fill { background: var(--success); opacity: 0.25; }
         .btn-confirm .htc-label { position: relative; }
 
+        /* Done slider modal (percent categories): plain click confirm, not hold-to-confirm. */
+        .done-slider-row { display: flex; align-items: center; gap: 14px; margin: 0 0 24px; }
+        #doneSlider { flex: 1; accent-color: var(--primary-highlight); cursor: pointer; }
+        #doneVal { min-width: 72px; text-align: right; color: var(--text-dim); font-size: 0.85rem; }
+        #doneConfirm { border-color: var(--primary-highlight); }
+        #doneConfirm:hover { background: rgba(58,134,255,0.14); }
+
         /* ── RUN MODE: strip editing UI, leave slots + name + remaining + progress ── */
         .app-container.mode-run .input-group,
         .app-container.mode-run .section-label,
