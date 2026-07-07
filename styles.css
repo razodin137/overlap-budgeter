@@ -377,6 +377,70 @@
         }
         .app-container.mode-run .category-row:active { transform: scale(0.985); }
 
+        /* ── ZEN MODE: calm full-screen focus on the running timer(s) ── */
+        .zen-overlay {
+            position: fixed; inset: 0;
+            background: rgba(8,8,8,0.93);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 48px; padding: 40px 24px;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.4s ease;
+            z-index: 200;
+        }
+        .zen-overlay.show { opacity: 1; pointer-events: auto; }
+        .zen-content {
+            display: flex; flex-wrap: wrap;
+            align-items: center; justify-content: center;
+            gap: 56px; width: 100%; max-width: 920px;
+        }
+        .zen-card {
+            display: flex; flex-direction: column; align-items: center;
+            min-width: 220px;
+            border-top: 3px solid #333;
+            padding-top: 20px;
+        }
+        .zen-name {
+            color: var(--text-dim);
+            font-size: 0.78rem; text-transform: uppercase; letter-spacing: 2.5px;
+            margin-bottom: 20px; text-align: center; max-width: 320px;
+        }
+        .zen-time {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: clamp(2.8rem, 11vw, 6.5rem);
+            font-weight: 700; line-height: 1;
+            transition: color 0.4s ease;
+        }
+        .zen-sub {
+            color: var(--text-dim); font-size: 0.72rem; margin-top: 12px;
+            letter-spacing: 1.5px; text-transform: uppercase;
+        }
+        .zen-progress {
+            width: 100%; max-width: 320px; height: 4px;
+            margin-top: 26px; border-radius: 4px;
+            background: rgba(255,255,255,0.06); overflow: hidden;
+        }
+        .zen-progress-fill {
+            height: 100%; width: 0%; border-radius: 4px;
+            transition: width 0.3s linear, background-color 0.3s ease;
+        }
+        .zen-card.alarm .zen-time { animation: zenFlash 1s infinite; }
+        @keyframes zenFlash { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .zen-empty { color: var(--text-dim); font-size: 0.95rem; letter-spacing: 1.5px; }
+        .zen-exit {
+            background: transparent; border: 1px solid #333; color: var(--text-dim);
+            padding: 10px 24px; border-radius: 30px; cursor: pointer;
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: 2px; font-weight: 600;
+            transition: border-color 0.25s, color 0.25s;
+        }
+        .zen-exit:hover { border-color: var(--primary-highlight); color: #fff; }
+        .zen-exit:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+
+        /* Zen button lights up while zen is active */
+        .hdr-btn.active { background: var(--primary-highlight); color: #fff; border-color: var(--primary-highlight); }
+
         @media (max-width: 520px) {
             .app-container { padding: 22px; border-radius: 28px; }
             .category-row { grid-template-columns: 1.4fr 0.7fr 1.25fr 76px 34px; gap: 6px; }

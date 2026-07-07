@@ -26,6 +26,7 @@
         multitask: false,
         mode: 'edit',
         paletteIdx: 0,
+        zenMode: 'auto',   // 'auto' (solo auto-open) | 'on' (always) | 'off' (never)
         fixed: [],
         percent: [],
     };
@@ -54,6 +55,7 @@
                     multitask: !!s.multitask,
                     mode: (s.mode === 'run') ? 'run' : 'edit',
                     paletteIdx: Math.max(0, Math.min(PALETTE_SETS.length - 1, s.paletteIdx|0)),
+                    zenMode: (s.zenMode === 'on' || s.zenMode === 'off') ? s.zenMode : 'auto',
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
                     percent: Array.isArray(s.percent) ? s.percent.map(norm) : [],
                 };
@@ -99,6 +101,8 @@
         }
         b.startedAt = nowMs();
         b.alarmed = false;       // re-arm the alarm when a fresh run begins
+        // A fresh start re-opens zen (auto mode shows it for solo timers).
+        zenDismissed = false;
     }
     function stopBlock(b) {
         if (!b.startedAt) return;
@@ -467,6 +471,8 @@
         const { remaining } = recalc();
         state.fixed.forEach(b => updateRow(b, false, remaining));
         state.percent.forEach(b => updateRow(b, true, remaining));
+        updateZen();              // refresh zen cards in place while visible
+        updateZenVisibility();    // auto-show/hide as timers start and stop
     }
 
     // --- Reset the day: zero out all time, keep the structure ---
@@ -550,6 +556,112 @@
         save(); applyMode(); renderStructure();
     }
 
+    // --- Zen mode: full-screen focus on whatever is running ---
+    // Visibility policy:
+    //   auto: show whenever a solo timer runs (multitask off); dismiss until next start.
+    //   on:   always visible; exiting drops back to auto.
+    //   off:  never visible.
+    // Exiting never stops timers — they keep running and zen can be reactivated.
+    const ZEN_MODES = ['auto', 'on', 'off'];
+    let zenDismissed = false;     // user paged out of an auto zen; cleared on next start
+    let zenSig = '';              // set of running ids currently rendered (avoids per-tick churn)
+
+    function remainingHours() {
+        const bank = parseFloat(document.getElementById('totalBank').value) || 0;
+        const totalFixed = state.fixed.reduce((s, b) => s + (b.hours || 0), 0);
+        return Math.max(0, bank - totalFixed);
+    }
+    function runningBlocks() {
+        return [...state.fixed, ...state.percent].filter(b => b.startedAt);
+    }
+    function zenShouldShow() {
+        if (state.zenMode === 'off') return false;
+        if (state.zenMode === 'on') return true;
+        // auto: solo only — never auto-open while overlapping timers are allowed
+        if (state.multitask) return false;
+        return runningBlocks().length > 0 && !zenDismissed;
+    }
+    function applyZenLabel() {
+        const btn = document.getElementById('zenBtn');
+        btn.textContent = state.zenMode.charAt(0).toUpperCase() + state.zenMode.slice(1);
+    }
+    function updateZenVisibility() {
+        const overlay = document.getElementById('zenOverlay');
+        const show = zenShouldShow();
+        overlay.classList.toggle('show', show);
+        overlay.setAttribute('aria-hidden', show ? 'false' : 'true');
+        document.getElementById('zenBtn').classList.toggle('active', show);
+        if (show) updateZen();
+    }
+    function updateZen() {
+        const content = document.getElementById('zenContent');
+        const running = runningBlocks();
+        const sig = running.map(b => b.id).join(',');
+        const remaining = remainingHours();
+        const runMode = state.mode === 'run';
+
+        // Rebuild structure only when the set of running timers changes.
+        if (sig !== zenSig) {
+            zenSig = sig;
+            content.innerHTML = '';
+            if (running.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'zen-empty';
+                empty.textContent = 'No timers running';
+                content.appendChild(empty);
+            } else {
+                running.forEach(b => {
+                    const card = document.createElement('div');
+                    card.className = 'zen-card';
+                    card.dataset.id = b.id;
+                    card.style.borderTopColor = b.color;
+                    card.innerHTML =
+                        '<div class="zen-name"></div>' +
+                        '<div class="zen-time"></div>' +
+                        '<div class="zen-sub"></div>' +
+                        '<div class="zen-progress"><div class="zen-progress-fill"></div></div>';
+                    content.appendChild(card);
+                });
+            }
+        }
+
+        // Update text in place every tick (no DOM churn while timers run).
+        running.forEach(b => {
+            const isPercent = state.percent.includes(b);
+            const budget = isPercent ? budgetSecPercent(b, remaining) : budgetSecFixed(b);
+            const sec = elapsedOf(b);
+            const card = content.querySelector(`.zen-card[data-id="${b.id}"]`);
+            if (!card) return;
+            const shown = runMode ? Math.max(0, budget - sec) : sec;
+            card.querySelector('.zen-name').textContent = b.name;
+            const time = card.querySelector('.zen-time');
+            time.textContent = formatDigitalTime(shown);
+            time.style.color = ratioColor(b.color, budget, sec);
+            card.querySelector('.zen-sub').textContent = runMode ? (b.startedAt ? 'left' : '') : 'of ' + formatCompact(budget);
+            const pct = budget > 0 ? Math.min(100, (sec / budget) * 100) : (sec > 0 ? 100 : 0);
+            const fill = card.querySelector('.zen-progress-fill');
+            fill.style.width = pct + '%';
+            fill.style.backgroundColor = ratioColor(b.color, budget, sec);
+            card.querySelector('.zen-progress').style.background = fade(b.color);
+            card.classList.toggle('alarm', !!b.alarmed);
+        });
+    }
+    function cycleZen() {
+        state.zenMode = ZEN_MODES[(ZEN_MODES.indexOf(state.zenMode) + 1) % ZEN_MODES.length];
+        zenDismissed = false;          // pressing the button reactivates zen with whatever is running
+        applyZenLabel();
+        updateZenVisibility();
+        save();
+    }
+    // Page out of zen. Timers keep running; re-enter via the button or a fresh solo start.
+    function exitZen() {
+        if (state.zenMode === 'on') state.zenMode = 'auto';   // forced → auto
+        zenDismissed = true;
+        applyZenLabel();
+        updateZenVisibility();
+        save();
+    }
+
     // --- Hold-to-confirm modal ---
     const HOLD_MS = 1300;
     let holding = false;
@@ -601,6 +713,7 @@
         if (had) reassignColorsIfNeeded();
         applyPaletteLabel();
         applyMode();
+        applyZenLabel();
 
         const bankInput = document.getElementById('totalBank');
         bankInput.value = state.totalBank;
@@ -611,13 +724,24 @@
 
         const mt = document.getElementById('multitask');
         mt.checked = state.multitask;
-        mt.addEventListener('change', () => { state.multitask = mt.checked; save(); });
+        mt.addEventListener('change', () => {
+            state.multitask = mt.checked;
+            if (!state.multitask) zenDismissed = false;   // back to solo: let zen reopen
+            updateZenVisibility();
+            save();
+        });
 
         document.getElementById('addFixedBtn').addEventListener('click', addFixed);
         document.getElementById('addPercentBtn').addEventListener('click', addPercent);
         document.getElementById('toastUndo').addEventListener('click', doUndo);
         document.getElementById('paletteBtn').addEventListener('click', cyclePalette);
         document.getElementById('modeBtn').addEventListener('click', toggleMode);
+
+        // Zen mode: cycle Auto / On / Off; paging out keeps timers running.
+        document.getElementById('zenBtn').addEventListener('click', cycleZen);
+        const zenOverlay = document.getElementById('zenOverlay');
+        document.getElementById('zenExit').addEventListener('click', exitZen);
+        zenOverlay.addEventListener('click', (e) => { if (e.target === zenOverlay) exitZen(); });
 
         // Reset the day — modal + hold-to-confirm
         const resetModal = document.getElementById('resetModal');
@@ -642,6 +766,7 @@
         confirmBtn.addEventListener('blur', cancelHold);
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && resetModal.classList.contains('show')) closeResetModal();
+            else if (e.key === 'Escape' && zenOverlay.classList.contains('show')) exitZen();
         });
 
         // Keyboard: spacebar toggles whichever row is focused's timer; Ctrl/Cmd+Z undoes a remove.

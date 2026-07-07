@@ -14,6 +14,7 @@
         <h1>Time Budget</h1>
         <div class="header-actions">
             <button class="hdr-btn" id="paletteBtn" title="Cycle color palette">Palette</button>
+            <button class="hdr-btn" id="zenBtn" title="Cycle zen mode: Auto / On / Off">Zen</button>
             <button class="hdr-btn" id="modeBtn" title="Toggle run / edit mode">Run</button>
         </div>
     </div>
@@ -51,6 +52,11 @@
 <div class="toast" id="toast">
     <span id="toastLabel"></span>
     <button id="toastUndo">Undo</button>
+</div>
+
+<div class="zen-overlay" id="zenOverlay" aria-hidden="true">
+    <div class="zen-content" id="zenContent"></div>
+    <button class="zen-exit" id="zenExit" aria-label="Exit zen mode">Exit zen</button>
 </div>
 
 <div class="modal-backdrop" id="resetModal" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
