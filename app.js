@@ -62,7 +62,6 @@
         multitask: false,
         mode: 'edit',
         paletteIdx: 0,
-        zenMode: 'auto',   // 'auto' (solo auto-open) | 'on' (always) | 'off' (never)
         nowMode: false,    // "Start from NOW" reflow active?
         nowBaseline: {},   // id → elapsedOf(b) snapshot (seconds) at the moment nowMode engaged
         fixed: [],
@@ -96,7 +95,6 @@
                     multitask: !!s.multitask,
                     mode: (s.mode === 'run') ? 'run' : 'edit',
                     paletteIdx: Math.max(0, Math.min(PALETTE_SETS.length - 1, s.paletteIdx|0)),
-                    zenMode: (s.zenMode === 'on' || s.zenMode === 'off') ? s.zenMode : 'auto',
                     nowMode: !!s.nowMode,
                     nowBaseline: (s.nowBaseline && typeof s.nowBaseline === 'object') ? s.nowBaseline : {},
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
@@ -155,8 +153,8 @@
         b.startedAt = nowMs();
         b.alarmed = false;       // re-arm the alarm when a fresh run begins
         b.done = false;          // resuming a finished block un-finishes it (re-reserves its plan)
-        // A fresh start re-opens zen (auto mode shows it for solo timers).
-        zenDismissed = false;
+        // Solo starts auto-open the zen overlay; overlapping starts do not.
+        if (!state.multitask) { zenOpen = true; updateZenVisibility(); }
     }
     // DONE: stop the timer (banking what was spent) and release any leftover planned
     // time back to the percent splits. Toggling again undoes it (re-reserves the plan).
@@ -409,6 +407,25 @@
         rm.className = 'btn-remove'; rm.textContent = '×';
         rm.addEventListener('click', () => removeBlock(listKey, b.id));
 
+        // Mobile edit-mode only: a chevron that expands the row to reveal the
+        // secondary fields (time/hours/buttons) at full size. Hidden on desktop
+        // and in run mode via CSS, so it never affects the grid layouts there.
+        const chev = document.createElement('button');
+        chev.className = 'chevron';
+        chev.type = 'button';
+        chev.setAttribute('aria-label', 'Expand category fields');
+        chev.setAttribute('aria-expanded', 'false');
+        chev.textContent = '▾';
+        chev.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Only one row expanded at a time.
+            document.querySelectorAll('.category-row.expanded')
+                .forEach(r => { if (r !== row) { r.classList.remove('expanded'); r.querySelector('.chevron')?.setAttribute('aria-expanded', 'false'); } });
+            const willExpand = !row.classList.contains('expanded');
+            row.classList.toggle('expanded', willExpand);
+            chev.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+        });
+
         // Per-row progress bar (fill = block color, grows with elapsed/budget)
         const progress = document.createElement('div');
         progress.className = 'progress';
@@ -416,7 +433,7 @@
         fill.className = 'progress-fill';
         progress.appendChild(fill);
 
-        row.append(name, num, disp, btn, rm, progress);
+        row.append(name, num, disp, btn, rm, chev, progress);
         if (time) row.insertBefore(time, num);   // fixed rows: name | time | hrs | …
         if (doneBtn) row.insertBefore(doneBtn, rm);   // … start/stop | Done | remove
 
@@ -797,6 +814,8 @@
         });
         state.nowMode = false;
         state.nowBaseline = {};
+        zenOpen = false;        // a fresh day starts with zen closed; a solo start reopens it
+        updateZenVisibility();
         save();
         renderStructure();
     }
@@ -901,13 +920,10 @@
     }
 
     // --- Zen mode: full-screen focus on whatever is running ---
-    // Visibility policy:
-    //   auto: show whenever a solo timer runs (multitask off); dismiss until next start.
-    //   on:   always visible; exiting drops back to auto.
-    //   off:  never visible.
-    // Exiting never stops timers — they keep running and zen can be reactivated.
-    const ZEN_MODES = ['auto', 'on', 'off'];
-    let zenDismissed = false;     // user paged out of an auto zen; cleared on next start
+    // The Zen button is a simple open/close toggle. Solo starts auto-open the
+    // overlay; exiting (×, backdrop, Escape) closes it; the button reopens it.
+    // State is ephemeral (not persisted) — a fresh page starts closed.
+    let zenOpen = false;
     let zenSig = '';              // set of running ids currently rendered (avoids per-tick churn)
 
     function remainingHours() {
@@ -918,24 +934,12 @@
     function runningBlocks() {
         return [...state.fixed, ...state.percent].filter(b => b.startedAt);
     }
-    function zenShouldShow() {
-        if (state.zenMode === 'off') return false;
-        if (state.zenMode === 'on') return true;
-        // auto: solo only — never auto-open while overlapping timers are allowed
-        if (state.multitask) return false;
-        return runningBlocks().length > 0 && !zenDismissed;
-    }
-    function applyZenLabel() {
-        const btn = document.getElementById('zenBtn');
-        btn.textContent = state.zenMode.charAt(0).toUpperCase() + state.zenMode.slice(1);
-    }
     function updateZenVisibility() {
         const overlay = document.getElementById('zenOverlay');
-        const show = zenShouldShow();
-        overlay.classList.toggle('show', show);
-        overlay.setAttribute('aria-hidden', show ? 'false' : 'true');
-        document.getElementById('zenBtn').classList.toggle('active', show);
-        if (show) updateZen();
+        overlay.classList.toggle('show', zenOpen);
+        overlay.setAttribute('aria-hidden', zenOpen ? 'false' : 'true');
+        document.getElementById('zenBtn').classList.toggle('active', zenOpen);
+        if (zenOpen) updateZen();
     }
     function updateZen() {
         const content = document.getElementById('zenContent');
@@ -989,20 +993,15 @@
             card.classList.toggle('alarm', !!b.alarmed);
         });
     }
-    function cycleZen() {
-        state.zenMode = ZEN_MODES[(ZEN_MODES.indexOf(state.zenMode) + 1) % ZEN_MODES.length];
-        zenDismissed = false;          // pressing the button reactivates zen with whatever is running
-        applyZenLabel();
+    // Zen button: toggle the overlay open/closed. Auto-pop is handled in startBlock.
+    function toggleZen() {
+        zenOpen = !zenOpen;
         updateZenVisibility();
-        save();
     }
     // Page out of zen. Timers keep running; re-enter via the button or a fresh solo start.
     function exitZen() {
-        if (state.zenMode === 'on') state.zenMode = 'auto';   // forced → auto
-        zenDismissed = true;
-        applyZenLabel();
+        zenOpen = false;
         updateZenVisibility();
-        save();
     }
 
     // --- Hold-to-confirm modal ---
@@ -1056,7 +1055,6 @@
         if (had) reassignColorsIfNeeded();
         applyPaletteLabel();
         applyMode();
-        applyZenLabel();
         applyNowLabel();
         applyDayLabel();
 
@@ -1083,7 +1081,6 @@
         mt.checked = state.multitask;
         mt.addEventListener('change', () => {
             state.multitask = mt.checked;
-            if (!state.multitask) zenDismissed = false;   // back to solo: let zen reopen
             updateZenVisibility();
             save();
         });
@@ -1094,8 +1091,8 @@
         document.getElementById('paletteBtn').addEventListener('click', cyclePalette);
         document.getElementById('modeBtn').addEventListener('click', toggleMode);
 
-        // Zen mode: cycle Auto / On / Off; paging out keeps timers running.
-        document.getElementById('zenBtn').addEventListener('click', cycleZen);
+        // Zen: button toggles the overlay; auto-pop happens on solo starts.
+        document.getElementById('zenBtn').addEventListener('click', toggleZen);
         const zenOverlay = document.getElementById('zenOverlay');
         document.getElementById('zenExit').addEventListener('click', exitZen);
         zenOverlay.addEventListener('click', (e) => { if (e.target === zenOverlay) exitZen(); });

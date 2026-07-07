@@ -588,10 +588,65 @@
         /* NOW button lights up green while the reflow is active (green = "present"). */
         #nowBtn.active { background: var(--success); color: #0a0a0a; border-color: var(--success); }
 
+        /* Mobile expand chevron — hidden on desktop and in run mode; shown only
+           inside the mobile media query for edit-mode rows. */
+        .chevron { display: none; }
+
         @media (max-width: 520px) {
             .app-container { padding: 22px; border-radius: 28px; }
-            .category-row { grid-template-columns: 1.4fr 0.7fr 1.25fr 76px 34px; gap: 6px; }
-            .category-row.is-fixed { grid-template-columns: 1fr 0.8fr 0.45fr 0.8fr 50px 48px 26px; gap: 5px; }
+
+            /* Edit mode: each row becomes a compact summary (name · readout · chevron)
+               that expands on tap to reveal the secondary fields at full size.
+               Run mode keeps its grid (name | display | Done) and whole-row tap. */
+            .app-container:not(.mode-run) .category-row {
+                display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
+            }
+            /* Line 1 (always visible): name grows to fill, timer readout + chevron right. */
+            .app-container:not(.mode-run) .category-row > input[type="text"] {
+                flex: 1 1 auto; min-width: 0; order: 1;
+            }
+            .app-container:not(.mode-run) .category-row .timer-display { flex: 0 0 auto; order: 1; }
+            .app-container:not(.mode-run) .chevron {
+                display: inline-flex; align-items: center; justify-content: center;
+                flex: 0 0 36px; min-height: 40px; order: 2;
+                background: transparent; border: 1px solid #333; color: var(--text-dim);
+                border-radius: 9px; cursor: pointer; font-size: 0.85rem;
+                transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            }
+            .app-container:not(.mode-run) .chevron:hover { color: #fff; border-color: #444; }
+            .app-container:not(.mode-run) .category-row.expanded .chevron { transform: rotate(180deg); }
+
+            /* Secondary fields: hidden while collapsed. */
+            .app-container:not(.mode-run) .category-row > input[type="time"],
+            .app-container:not(.mode-run) .category-row > input[type="number"],
+            .app-container:not(.mode-run) .category-row .btn-timer,
+            .app-container:not(.mode-run) .category-row .btn-done,
+            .app-container:not(.mode-run) .category-row .btn-remove { display: none; }
+
+            /* …revealed below when expanded. Inputs share a line; buttons share the next. */
+            .app-container:not(.mode-run) .category-row.expanded > input[type="time"],
+            .app-container:not(.mode-run) .category-row.expanded > input[type="number"] {
+                display: block; flex: 1 1 45%; min-width: 0; order: 3;
+            }
+            .app-container:not(.mode-run) .category-row.is-percent.expanded > input[type="number"] {
+                flex: 1 1 100%;   /* percent rows have only the % input on this line */
+            }
+            .app-container:not(.mode-run) .category-row.expanded .btn-timer {
+                display: flex; flex: 1 1 50%; min-height: 44px; order: 4;
+                align-items: center; justify-content: center;
+            }
+            .app-container:not(.mode-run) .category-row.expanded .btn-done {
+                display: flex; flex: 0 0 76px; min-height: 44px; order: 4;
+                align-items: center; justify-content: center;
+            }
+            .app-container:not(.mode-run) .category-row.expanded .btn-remove {
+                display: flex; flex: 0 0 44px; min-height: 44px; order: 4;
+                align-items: center; justify-content: center;
+            }
+
+            /* Progress bar always full-width, last. */
+            .app-container:not(.mode-run) .category-row .progress { flex: 1 1 100%; order: 99; margin-top: 4px; }
+
             .td-elapsed { font-size: 0.8rem; }
             .td-budget { font-size: 0.58rem; }
             .day-length { margin: 0; padding: 0; align-self: center; }
