@@ -37,19 +37,10 @@
         return len > 0 ? Math.max(0, Math.min(100, (nowMin() - wake) / len * 100)) : 0;
     }
 
-    /* ── Preset color sets. Each row gets its own color from the active set, by index.
-       The palette button cycles the active set. ── */
-    const PALETTE_SETS = [
-        { name: "Neon",   colors: ['#ef476f', '#11f1f7', '#bc8efc', '#fb8500', '#8338ec', '#f72585', '#3a0ca3'] },
-        { name: "Warm",   colors: ['#ff8c42', '#ffd166', '#f72585', '#ef476f', '#e63946', '#fb8500', '#e76f51'] },
-        { name: "Cool",   colors: ['#3a86ff', '#06d6a0', '#11f1f7', '#8338ec', '#bc8efc', '#4361ee', '#7209b7'] },
-        { name: "Earth",  colors: ['#a3b18a', '#e9c46a', '#bc6c25', '#ddbea9', '#588157', '#cb997e', '#b08968'] },
-        { name: "Candy",  colors: ['#ff6b9d', '#feca57', '#48dbfb', '#1dd1a1', '#ff9ff3', '#54a0ff', '#5f27cd'] },
-        { name: "Mono",   colors: ['#e9ecef', '#ced4da', '#adb5bd', '#868e96', '#6c757d', '#495057', '#dee2e6'] },
-    ];
-    function currentPalette() { return PALETTE_SETS[state.paletteIdx].colors; }
+    /* ── One fixed color set. Each row gets its own color by index, in creation order. ── */
+    const PALETTE = ['#ef476f', '#11f1f7', '#bc8efc', '#fb8500', '#8338ec', '#f72585', '#3a0ca3'];
     let colorIdx = 0;
-    function pickColor() { const pal = currentPalette(); return pal[colorIdx++ % pal.length]; }
+    function pickColor() { return PALETTE[colorIdx++ % PALETTE.length]; }
 
     function uid() { return Math.random().toString(36).slice(2, 10); }
     function nowMs() { return Date.now(); }
@@ -61,7 +52,6 @@
         bed: DEFAULT_BED,
         multitask: false,
         mode: 'edit',
-        paletteIdx: 0,
         nowMode: false,    // "Start from NOW" reflow active?
         nowBaseline: {},   // id → elapsedOf(b) snapshot (seconds) at the moment nowMode engaged
         fixed: [],
@@ -94,7 +84,6 @@
                     bed: typeof s.bed === 'string' ? s.bed : DEFAULT_BED,
                     multitask: !!s.multitask,
                     mode: (s.mode === 'run') ? 'run' : 'edit',
-                    paletteIdx: Math.max(0, Math.min(PALETTE_SETS.length - 1, s.paletteIdx|0)),
                     nowMode: !!s.nowMode,
                     nowBaseline: (s.nowBaseline && typeof s.nowBaseline === 'object') ? s.nowBaseline : {},
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
@@ -326,7 +315,7 @@
         if (row && state.mode === 'edit') { const inp = row.querySelector('input[type="text"]'); if (inp) inp.focus(); }
     }
 
-    // --- Toast (shared by undo / alarm / palette) ---
+    // --- Toast (shared by undo / alarm) ---
     function showToast(label, withUndo) {
         const toast = document.getElementById('toast');
         document.getElementById('toastLabel').textContent = label;
@@ -855,26 +844,6 @@
         save();
     }
 
-    // --- Palette cycler: reassign every block's color from the active set, by index ---
-    function reassignColors() {
-        const pal = currentPalette();
-        let i = 0;
-        [...state.fixed, ...state.percent].forEach(b => { b.color = pal[i % pal.length]; i++; });
-        colorIdx = i;   // next new block continues the rotation
-    }
-    function applyPaletteLabel() {
-        document.getElementById('paletteBtn').textContent = PALETTE_SETS[state.paletteIdx].name;
-    }
-    function cyclePalette() {
-        state.paletteIdx = (state.paletteIdx + 1) % PALETTE_SETS.length;
-        reassignColors();
-        applyPaletteLabel();
-        save(); renderStructure();
-        showToast('Palette: ' + PALETTE_SETS[state.paletteIdx].name, false);
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(hideToast, 1600);
-    }
-
     // --- Run / Edit mode ---
     function applyMode() {
         document.getElementById('app').classList.toggle('mode-run', state.mode === 'run');
@@ -1051,9 +1020,8 @@
     function init() {
         const had = load();
         if (!had) seedDefaults();
-        // If loaded an old save with no palette assignment for current set, ensure colors exist.
+        // If loaded an old save with no color assignment, ensure colors exist.
         if (had) reassignColorsIfNeeded();
-        applyPaletteLabel();
         applyMode();
         applyNowLabel();
         applyDayLabel();
@@ -1088,7 +1056,6 @@
         document.getElementById('addFixedBtn').addEventListener('click', addFixed);
         document.getElementById('addPercentBtn').addEventListener('click', addPercent);
         document.getElementById('toastUndo').addEventListener('click', doUndo);
-        document.getElementById('paletteBtn').addEventListener('click', cyclePalette);
         document.getElementById('modeBtn').addEventListener('click', toggleMode);
 
         // Zen: button toggles the overlay; auto-pop happens on solo starts.
@@ -1151,12 +1118,11 @@
         document.addEventListener('visibilitychange', () => { if (!document.hidden) updateLive(); });
     }
 
-    // Make sure existing blocks have a color from the active palette (for very old saves).
+    // Make sure existing blocks have a color from the palette (for very old saves).
     function reassignColorsIfNeeded() {
-        const pal = currentPalette();
         let i = 0;
         [...state.fixed, ...state.percent].forEach(b => {
-            if (!b.color) b.color = pal[i % pal.length];
+            if (!b.color) b.color = PALETTE[i % PALETTE.length];
             i++;
         });
         colorIdx = i;

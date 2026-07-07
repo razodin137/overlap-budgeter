@@ -32,7 +32,7 @@
             border: 1px solid var(--border-color);
         }
 
-        /* Title row: h1 + header action buttons (palette / mode) */
+        /* Title row: h1 + header action buttons (zen / now / mode) */
         .title-row {
             display: flex;
             align-items: center;
