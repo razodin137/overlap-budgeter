@@ -1124,7 +1124,7 @@
             const i = Math.max(0, Math.min(labels.length - 1, Math.round(wrap.scrollTop / WHEEL_ITEM_H)));
             if (i !== cur) { cur = i; onIndex(i); }
         };
-        wrap.addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(read); });
+        wrap.addEventListener('scroll', () => { read(); });
         requestAnimationFrame(() => { wrap.scrollTop = startIndex * WHEEL_ITEM_H; });
         return { el: wrap, setIndex(i) { cur = i; wrap.scrollTop = i * WHEEL_ITEM_H; } };
     }
