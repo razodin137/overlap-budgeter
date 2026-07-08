@@ -300,6 +300,17 @@
         .segment.free {
             background: repeating-linear-gradient(45deg, #2a2a2a, #2a2a2a 4px, #232323 4px, #232323 8px) !important;
         }
+        /* The bright bar inside a segment that "fills up" as time is spent against
+           the budget — same look as the per-row progress pills. */
+        .segment-fill {
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 0;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease;
+            pointer-events: none;
+            /* background-image (stripe density) set inline per tick — not transitioned. */
+        }
         /* Spent-time blobs: a block's identity color, dimmed to read as history. */
         .spent-blob {
             position: absolute;
@@ -310,16 +321,18 @@
             box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
             transition: left 0.3s linear, width 0.3s linear;
         }
-        /* NOW marker: green pulse line splitting past (dim) from future (bright). */
+        /* NOW marker: a vertical line + pulsing dot + label. It paints itself in the
+           color of the currently-running timer (--now-color, set inline on #tlNow);
+           green when nothing is running. color-mix derives the translucent glows. */
         .tl-now {
             position: absolute;
             top: -4px; bottom: -4px;
             width: 2px;
-            background: var(--success);
+            background: var(--now-color, var(--success));
             transform: translateX(-50%);
-            box-shadow: 0 0 10px rgba(6,214,160,0.65);
+            box-shadow: 0 0 10px color-mix(in srgb, var(--now-color, var(--success)) 65%, transparent);
             z-index: 6;
-            transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease, box-shadow 0.4s ease;
         }
         .tl-now-dot {
             position: absolute;
@@ -327,8 +340,8 @@
             width: 9px; height: 9px;
             transform: translateX(-50%);
             border-radius: 50%;
-            background: var(--success);
-            box-shadow: 0 0 8px rgba(6,214,160,0.85);
+            background: var(--now-color, var(--success));
+            box-shadow: 0 0 8px color-mix(in srgb, var(--now-color, var(--success)) 85%, transparent);
             animation: nowPulse 1.4s infinite;
         }
         .tl-now-label {
@@ -339,15 +352,18 @@
             font-size: 0.58rem;
             font-weight: 700;
             letter-spacing: 0.6px;
-            color: var(--success);
+            color: var(--now-color, var(--success));
             background: #0a0a0a;
             padding: 1px 7px;
             border-radius: 8px;
-            border: 1px solid rgba(6,214,160,0.45);
+            border: 1px solid color-mix(in srgb, var(--now-color, var(--success)) 45%, transparent);
         }
+        /* Keep the NOW label inside the card at the very edges of the day. */
+        .tl-now-label.edge-left { left: 0; transform: none; }
+        .tl-now-label.edge-right { left: auto; right: 0; transform: none; }
         @keyframes nowPulse {
-            0%, 100% { box-shadow: 0 0 6px rgba(6,214,160,0.6); transform: translateX(-50%) scale(1); }
-            50%      { box-shadow: 0 0 12px rgba(6,214,160,1);  transform: translateX(-50%) scale(1.25); }
+            0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--now-color, var(--success)) 60%, transparent); transform: translateX(-50%) scale(1); }
+            50%      { box-shadow: 0 0 12px var(--now-color, var(--success));  transform: translateX(-50%) scale(1.25); }
         }
         /* Hour ticks beneath the bar */
         .tl-ticks {
@@ -515,7 +531,6 @@
         .app-container.mode-run .category-row input[type="time"],
         .app-container.mode-run .category-row .btn-timer,
         .app-container.mode-run .category-row .btn-remove { display: none; }
-        .app-container.mode-run .category-row .td-budget { display: none; }
         .app-container.mode-run .category-row input[type="text"] {
             pointer-events: none;
             background: transparent;
@@ -523,6 +538,9 @@
             padding-left: 0;
         }
         .app-container.mode-run .category-row:active { transform: scale(0.985); }
+        /* Sustained cue while a long-press is being captured (before the edit sheet opens). */
+        .app-container.mode-run .category-row.holding { background: #242424; transform: scale(0.985); }
+        .app-container.mode-run .category-row:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
 
         /* ── ZEN MODE: calm full-screen focus on the running timer(s) ── */
         .zen-overlay {
@@ -729,6 +747,7 @@
             height: 200px; overflow-y: scroll;
             scroll-snap-type: y mandatory;
             -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
             scrollbar-width: none;
             mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
             -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
@@ -782,6 +801,7 @@
         }
         .btn-danger:hover { background: rgba(255,77,77,0.1); }
         .btn-danger:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+        .btn-danger.armed { background: rgba(255,77,77,0.16); border-color: var(--danger); color: #fff; }
 
         @media (max-width: 520px) {
             /* Run view is always on; rows keep the clean run grid on mobile too. */

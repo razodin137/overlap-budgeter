@@ -440,13 +440,16 @@
         // toggles the timer. Movement past a small threshold cancels the hold so
         // vertical page scrolling still works on touch. Done button is excluded
         // (it has its own click handler and stopPropagation).
-        let holdTimer = null, held = false, moved = false, sx = 0, sy = 0;
+        let holdTimer = null, cueTimer = null, held = false, moved = false, sx = 0, sy = 0;
+        const clearHold = () => { clearTimeout(holdTimer); clearTimeout(cueTimer); holdTimer = null; cueTimer = null; row.classList.remove('holding'); };
         row.addEventListener('pointerdown', (e) => {
             if (e.target.closest('.btn-done')) return;     // Done handles itself
             held = false; moved = false;
             sx = e.clientX; sy = e.clientY;
+            cueTimer = setTimeout(() => { row.classList.add('holding'); }, 150);   // tactile-ish cue that the hold is registering
             holdTimer = setTimeout(() => {
                 held = true;
+                row.classList.remove('holding');
                 if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
                 openEditSheet(b, listKey);
             }, 450);
@@ -454,21 +457,32 @@
         row.addEventListener('pointermove', (e) => {
             if (!holdTimer) return;
             if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) {
-                moved = true; clearTimeout(holdTimer); holdTimer = null;
+                moved = true; clearHold();
             }
         });
         const endPress = (e) => {
             if (!holdTimer && !held && !moved) return;   // nothing started here
-            clearTimeout(holdTimer); holdTimer = null;
-            if (held) { held = false; return; }          // hold already opened the sheet
-            if (moved) { moved = false; return; }        // was a scroll/drag
+            const wasHeld = held;
+            clearHold();
+            if (wasHeld) return;                         // hold already opened the sheet
+            if (moved) return;                            // was a scroll/drag
             // clean quick tap → toggle the timer
             e.preventDefault();
             ensureAudio();
             toggleBlock(listKey, b.id);
         };
         row.addEventListener('pointerup', endPress);
-        row.addEventListener('pointercancel', () => { clearTimeout(holdTimer); holdTimer = null; held = false; moved = false; });
+        row.addEventListener('pointercancel', clearHold);
+
+        // Keyboard: the row is a button — Enter opens the edit sheet, Space toggles
+        // the timer. Keeps the hold-to-edit flow reachable without a long-press.
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', 'Edit ' + b.name);
+        row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); openEditSheet(b, listKey); }
+            else if (e.key === ' ') { e.preventDefault(); ensureAudio(); toggleBlock(listKey, b.id); }
+        });
 
         return row;
     }
@@ -500,8 +514,12 @@
                 };
                 const seg = document.createElement('div');
                 seg.className = 'segment';
+                const fill = document.createElement('div');
+                fill.className = 'segment-fill';
+                seg.appendChild(fill);
                 tlSegs.appendChild(seg);
                 segEls[b.id] = seg;
+                seg._fill = fill;   // cached on the seg, reuses segEls
             });
         };
         attach(fC, 'fixed', false);
@@ -557,7 +575,8 @@
         e.timerElapsed.textContent = formatDigitalTime(shown);
         const done = !!b.done;
         e.timerBudget.textContent = runMode
-            ? (running ? 'left' : (done ? 'done' : ''))
+            ? (done ? 'done · ' + formatCompact(secAgainst)
+                    : formatCompact(secAgainst) + ' of ' + formatCompact(budget))
             : (done ? 'done · ' + formatCompact(sec) : 'of ' + formatCompact(budget));
         e.timerElapsed.style.color = displayColor(b, budget, secAgainst);
         e.row.classList.toggle('active', running);
@@ -579,6 +598,7 @@
         e.progressFill.style.width = pct + '%';
         e.progressFill.style.backgroundColor = displayColor(b, budget, secAgainst);
         e.progress.style.background = fade(b.color);
+        applyStripes(e.progressFill, budget, secAgainst);   // pills read used-time just like the timeline segments
 
         // Alarm: crossed budget while running, fires once.
         if (running && budget > 0 && secAgainst >= budget && !b.alarmed) {
@@ -594,6 +614,21 @@
             ? '#' + hex[1]+hex[1] + hex[2]+hex[2] + hex[3]+hex[3]
             : hex;
         return h + '22';
+    }
+
+    /* Same density-growing diagonal stripes the timeline segments use, applied to
+       any colored element (a segment fill OR a pill progress fill). r=0 → none;
+       r=1 → tight dark stripes. This is how "used time" is painted on the bar, and
+       now on the pills too so they read the same. Do NOT transition background-image
+       (it must update instantly each tick or the stripes smear). */
+    function applyStripes(el, budgetSec, secAgainst) {
+        const r = budgetSec > 0 ? Math.min(1, secAgainst / budgetSec) : (secAgainst > 0 ? 1 : 0);
+        if (r <= 0) { el.style.backgroundImage = 'none'; return; }
+        const period = Math.max(4, 40 * (1 - r) + 4);   // sparse (40px) → dense (4px) as it fills
+        const a = (0.22 * r).toFixed(2);
+        const half = (period / 2).toFixed(1);
+        el.style.backgroundImage =
+            `repeating-linear-gradient(45deg, rgba(0,0,0,${a}) 0, rgba(0,0,0,${a}) ${half}px, transparent ${half}px, transparent ${period.toFixed(1)}px)`;
     }
 
     function recalc() {
@@ -616,28 +651,26 @@
         const npct = nowPctOfDay();
         let cursor = state.nowMode ? npct : 0;
 
-        // Stripes overlay the bar's solid color; density grows with spent/budget so
-        // you can read how much of a block has been used straight off the bar.
-        const stripe = (seg, budgetSec, secAgainst) => {
-            const r = budgetSec > 0 ? Math.min(1, secAgainst / budgetSec) : (secAgainst > 0 ? 1 : 0);
-            if (r <= 0) { seg.style.backgroundImage = 'none'; return; }
-            const period = Math.max(4, 40 * (1 - r) + 4);   // sparse (40px) → dense (4px) as it fills
-            const a = (0.22 * r).toFixed(2);
-            const half = (period / 2).toFixed(1);
-            seg.style.backgroundImage =
-                `repeating-linear-gradient(45deg, rgba(0,0,0,${a}) 0, rgba(0,0,0,${a}) ${half}px, transparent ${half}px, transparent ${period.toFixed(1)}px)`;
-        };
-
+        // Stripes + a growing fill both encode used/budget. The segment is the dim
+        // track (the budget span); the .segment-fill child is the bright bar that
+        // "fills up" as time is spent — the same look the per-row pills use.
         const placeSeg = (b, leftPct, widthPct, budgetSec, secAgainst) => {
             const seg = segEls[b.id];
             if (!seg) return;
             const w = Math.max(0, widthPct);
             seg.style.left = leftPct + '%';
             seg.style.width = w + '%';
-            seg.style.backgroundColor = b.color;
+            seg.style.backgroundColor = fade(b.color);   // dim track
             seg.classList.toggle('done', !!b.done);
             seg.style.borderBottom = '2px solid ' + displayColor(b, budgetSec, secAgainst);
-            stripe(seg, budgetSec, secAgainst);
+            const fillPct = budgetSec > 0 ? Math.min(100, (secAgainst / budgetSec) * 100)
+                                          : (secAgainst > 0 ? 100 : 0);
+            const fill = seg._fill;
+            if (fill) {
+                fill.style.width = fillPct + '%';
+                fill.style.backgroundColor = displayColor(b, budgetSec, secAgainst);
+                applyStripes(fill, budgetSec, secAgainst);
+            }
             cursor = Math.max(cursor, leftPct + w);
         };
 
@@ -685,12 +718,24 @@
         const freeHours = (freePct / 100) * dayLenH;
         freeSeg.title = 'Free / unallocated: ' + formatHumanTime(freeHours * 3600);
 
-        // NOW line + dim past track (past track shown only in NOW mode).
+        // NOW line + dim past track (past track shown only in NOW mode). The NOW
+        // marker paints itself in the color of whatever timer is currently running
+        // (most-recently-started wins in multitask); green when nothing is running.
         const nowLine = document.getElementById('tlNow');
         if (nowLine) {
             nowLine.style.left = npct + '%';
             const lbl = document.getElementById('tlNowLabel');
-            if (lbl) lbl.textContent = 'NOW ' + formatClock(nowMin());
+            if (lbl) {
+                lbl.textContent = 'NOW ' + formatClock(nowMin());
+                lbl.classList.toggle('edge-left', npct < 8);
+                lbl.classList.toggle('edge-right', npct > 92);
+            }
+            const running = runningBlocks();
+            let nowColor = null;
+            if (running.length === 1) nowColor = running[0].color;
+            else if (running.length > 1) nowColor = running.reduce((a, b) => (b.startedAt > a.startedAt ? b : a)).color;
+            if (nowColor) nowLine.style.setProperty('--now-color', nowColor);
+            else nowLine.style.removeProperty('--now-color');
         }
         const tlPast = document.getElementById('tlPast');
         if (tlPast) tlPast.style.width = (state.nowMode ? npct : 0) + '%';
@@ -901,10 +946,6 @@
         btn.textContent = state.nowMode ? 'Plan' : 'Start from NOW';
         btn.setAttribute('aria-pressed', state.nowMode ? 'true' : 'false');
         btn.classList.toggle('active', state.nowMode);
-    }
-    function applyDayLabel() {
-        const el = document.getElementById('dayLength');
-        if (el) el.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';
     }
     function toggleNow() {
         state.nowMode = !state.nowMode;
@@ -1166,7 +1207,7 @@
 
     function openEditSheet(b, listKey) {
         const isPercent = listKey === 'percent';
-        editCtx = { b, listKey };
+        editCtx = { b, listKey, trigger: document.activeElement };   // restore focus here on close
         document.getElementById('editTitle').textContent = 'Edit';
         const body = document.getElementById('editBody');
         body.innerHTML = '';
@@ -1250,16 +1291,35 @@
             body.appendChild(anchorWrap);
         }
 
-        // Delete button reflects category type
-        document.getElementById('editDelete').onclick = () => {
+        // Delete: two-tap confirm so a misclick in the sheet can't drop a category.
+        const delBtn = document.getElementById('editDelete');
+        let armed = false, armTimer = null;
+        delBtn.onclick = () => {
+            if (!armed) {
+                armed = true;
+                delBtn.textContent = 'Tap again to delete';
+                delBtn.classList.add('armed');
+                armTimer = setTimeout(() => { armed = false; delBtn.textContent = 'Delete category'; delBtn.classList.remove('armed'); }, 3000);
+                return;
+            }
+            clearTimeout(armTimer);
             removeBlock(listKey, b.id);
             closeEditSheet();
         };
+        // Reset the delete button label for next time when the sheet closes.
         openSheet('editBackdrop');
-        // focus the name input shortly after the sheet is shown
-        requestAnimationFrame(() => { try { nameInput.focus({ preventScroll: true }); } catch (e) {} });
+        // focus + select the name input shortly after the sheet is shown (select so
+        // typing replaces the placeholder for newly added categories).
+        requestAnimationFrame(() => { try { nameInput.focus({ preventScroll: true }); nameInput.select(); } catch (e) {} });
     }
-    function closeEditSheet() { closeSheet('editBackdrop'); editCtx = null; }
+    function closeEditSheet() {
+        closeSheet('editBackdrop');
+        const delBtn = document.getElementById('editDelete');
+        if (delBtn) { delBtn.textContent = 'Delete category'; delBtn.classList.remove('armed'); }
+        const t = editCtx && editCtx.trigger;
+        editCtx = null;
+        if (t && t.focus) try { t.focus({ preventScroll: true }); } catch (e) {}
+    }
 
     function openDaySheet() {
         const body = document.getElementById('dayBody');
@@ -1275,7 +1335,6 @@
             state.wake = pad2(wH) + ':' + pad2(wM);
             state.bed  = pad2(bH) + ':' + pad2(bM);
             save();
-            applyDayLabel();
             renderTicks(document.getElementById('tlTicks'));
             updateLive();
             dayLenEl.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';
@@ -1300,7 +1359,7 @@
         body.appendChild(bedGroup);
 
         body.appendChild(dayLenEl);
-        applyDay();   // set the readout
+        dayLenEl.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';   // readout only — don't mutate state until a wheel moves
 
         // Multitask toggle
         const mtWrap = document.createElement('div');
@@ -1333,7 +1392,6 @@
         if (had) reassignColorsIfNeeded();
         applyMode();
         applyNowLabel();
-        applyDayLabel();
 
         // Day window is edited through a bottom-sheet opened by tapping the
         // timeline (the wake→bed bar at the top of the run view).
@@ -1342,6 +1400,9 @@
         visualizer.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDaySheet(); }
         });
+        // The caption is a sibling of the bar; wire it to the same day-window sheet.
+        const vizCaption = document.getElementById('vizCaption');
+        if (vizCaption) vizCaption.addEventListener('click', openDaySheet);
 
         document.getElementById('nowBtn').addEventListener('click', () => { ensureAudio(); toggleNow(); });
 
