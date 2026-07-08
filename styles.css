@@ -502,19 +502,14 @@
         #doneConfirm { border-color: var(--primary-highlight); }
         #doneConfirm:hover { background: rgba(58,134,255,0.14); }
 
-        /* ── RUN MODE: strip editing UI, leave slots + name + remaining + progress ── */
-        .app-container.mode-run .input-group,
+        /* ── RUN MODE: the home view. Strips editing UI; rows are name | remaining | Done + progress.
+           Editing happens in the hold-to-edit bottom-sheet, not inline. ── */
         .app-container.mode-run .section-label,
-        .app-container.mode-run .btn-add,
         .app-container.mode-run .results-list,
         .app-container.mode-run .total-warning { display: none !important; }
         .app-container.mode-run .category-row {
-            grid-template-columns: 1fr auto;
-            cursor: pointer;
-        }
-        /* Fixed rows keep their Done button in run mode: name | display | Done. */
-        .app-container.mode-run .category-row.is-fixed {
             grid-template-columns: 1fr auto auto;
+            cursor: pointer;
         }
         .app-container.mode-run .category-row input[type="number"],
         .app-container.mode-run .category-row input[type="time"],
@@ -663,4 +658,136 @@
             .tl-now-dot { animation: none; }
             .progress-fill { transition: width 0.3s linear !important; }
             .segment, .tl-now, .spent-blob { transition: width 0.3s linear, left 0.3s linear !important; }
+        }
+
+        /* ── Timeline as the Day Window header (tap to edit wake/bed) ── */
+        #visualizer { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        #visualizer:active .tl-bar { transform: scale(0.992); }
+        .tl-bar { transition: transform 0.15s ease; }
+        .viz-caption { cursor: pointer; }
+
+        /* ── Bottom sheets (per-category edit + day window) ── */
+        .sheet-backdrop {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.25s ease;
+            z-index: 160;
+            display: flex; align-items: flex-end; justify-content: center;
+        }
+        .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
+        .sheet {
+            background: var(--card-bg);
+            border: 1px solid #333; border-bottom: none;
+            border-top-left-radius: 26px; border-top-right-radius: 26px;
+            width: 100%; max-width: 600px;
+            max-height: 92vh; overflow-y: auto; overscroll-behavior: contain;
+            padding: 6px 22px 30px;
+            box-shadow: 0 -24px 50px rgba(0,0,0,0.6);
+            transform: translateY(100%);
+            transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .sheet-backdrop.show .sheet { transform: translateY(0); }
+        .sheet-handle {
+            width: 42px; height: 5px; border-radius: 3px; background: #3a3a3a;
+            margin: 10px auto 4px;
+        }
+        .sheet-head {
+            display: flex; align-items: center; justify-content: space-between;
+            margin: 8px 0 14px;
+        }
+        .sheet-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.3px; }
+        .sheet-close {
+            background: #222; border: 1px solid #333; color: #aaa;
+            width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+            font-size: 0.85rem; line-height: 1;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .sheet-close:hover { color: #fff; border-color: #444; }
+        .sheet-close:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+        .sheet-body { display: flex; flex-direction: column; gap: 18px; }
+        .sheet-field { display: flex; flex-direction: column; gap: 8px; }
+        .sheet-label {
+            color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .sheet-input {
+            width: 100%; box-sizing: border-box;
+            background: #222; border: 1px solid #333; color: #fff;
+            padding: 13px; border-radius: 12px; font-size: 1rem; outline: none;
+            transition: border 0.25s;
+        }
+        .sheet-input:focus { border-color: var(--primary-highlight); }
+        .sheet-actions { margin-top: 8px; }
+
+        /* ── Scroll wheels (hours / minutes) ── */
+        .wheel-pair { display: flex; gap: 18px; }
+        .wheel-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+        .wheel-wrap { position: relative; flex: 1; }
+        .wheel {
+            height: 200px; overflow-y: scroll;
+            scroll-snap-type: y mandatory;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
+        }
+        .wheel::-webkit-scrollbar { display: none; }
+        .wheel-item {
+            height: 40px; min-height: 40px;
+            scroll-snap-align: center;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.25rem; font-weight: 600;
+            color: #5a5a5a; transition: color 0.15s;
+        }
+        .wheel-item.wheel-spacer { scroll-snap-align: none; }
+        .wheel-band {
+            position: absolute; top: 50%; left: 0; right: 0; height: 40px;
+            transform: translateY(-50%);
+            border-top: 1px solid #333; border-bottom: 1px solid #333;
+            background: rgba(58,134,255,0.07);
+            border-radius: 8px; pointer-events: none;
+        }
+
+        /* Anchor-to-start-time toggle (fixed blocks) */
+        .anchor-field { gap: 10px; }
+        .anchor-row { display: flex; align-items: center; gap: 10px; cursor: pointer; color: #ddd; font-size: 0.9rem; }
+        .anchor-wheels { display: flex; gap: 18px; }
+        .anchor-wheels.hidden { display: none; }
+        .anchor-wheels .wheel-group { flex: 1; }
+
+        /* ── Percent slider ── */
+        .pct-readout {
+            font-size: 2.2rem; font-weight: 700; text-align: center;
+            color: var(--primary-highlight); line-height: 1;
+            margin-bottom: 4px;
+        }
+        .pct-slider { width: 100%; accent-color: var(--primary-highlight); cursor: pointer; height: 36px; }
+
+        /* Day window sheet extras */
+        .day-readout {
+            text-align: center; color: var(--success); font-weight: 600;
+            font-size: 0.9rem; margin-top: -4px;
+        }
+        .toggle-field { flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .toggle-field .toggle-label { flex: 1; min-width: 0; }
+
+        .btn-danger {
+            width: 100%; background: transparent;
+            border: 1px solid var(--danger); color: var(--danger);
+            padding: 13px; border-radius: 12px; cursor: pointer;
+            font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+            transition: background 0.2s, color 0.2s;
+        }
+        .btn-danger:hover { background: rgba(255,77,77,0.1); }
+        .btn-danger:focus-visible { outline: 2px solid var(--primary-highlight); outline-offset: 2px; }
+
+        @media (max-width: 520px) {
+            /* Run view is always on; rows keep the clean run grid on mobile too. */
+            .app-container.mode-run .category-row { grid-template-columns: 1fr auto auto; gap: 8px; }
+            .td-elapsed { font-size: 0.82rem; }
+            .sheet { padding: 6px 18px 26px; }
+            .wheel-pair { gap: 14px; }
+            .wheel-item { font-size: 1.15rem; }
         }

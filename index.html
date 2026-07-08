@@ -2,55 +2,24 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='42' fill='%23161616' stroke='%233a86ff' stroke-width='9'/><line x1='50' y1='50' x2='50' y2='26' stroke='%233a86ff' stroke-width='9' stroke-linecap='round'/><line x1='50' y1='50' x2='68' y2='50' stroke='%233a86ff' stroke-width='9' stroke-linecap='round'/></svg>">
     <title>Overlap Time Budgeter</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<div class="app-container" id="app">
+<div class="app-container mode-run" id="app">
     <div class="title-row">
         <h1>Time Budget</h1>
         <div class="header-actions">
             <button class="hdr-btn" id="zenBtn" title="Toggle zen focus overlay">Zen</button>
             <button class="hdr-btn" id="nowBtn" title="Reflow the time left until bed around NOW" aria-pressed="false">Start from NOW</button>
-            <button class="hdr-btn" id="modeBtn" title="Toggle run / edit mode">Run</button>
         </div>
     </div>
 
-    <div class="input-group">
-        <label class="section-label">Day Window</label>
-        <div class="day-window-row">
-            <div class="time-field">
-                <span class="time-field-label">Wake</span>
-                <input type="time" id="wakeInput" value="08:00">
-            </div>
-            <div class="time-field">
-                <span class="time-field-label">Bed</span>
-                <input type="time" id="bedInput" value="22:30">
-            </div>
-            <div class="day-length" id="dayLength"></div>
-        </div>
-        <div class="toggle-row">
-            <label class="switch">
-                <input type="checkbox" id="multitask">
-                <span class="track"></span>
-            </label>
-            <span class="toggle-label">Allow overlapping timers (off = starting one stops the rest)</span>
-        </div>
-    </div>
-
-    <label class="section-label">Fixed Blocks (Time · Hours)</label>
-    <div id="fixedContainer"></div>
-    <button class="btn-add" id="addFixedBtn">+ Add Fixed Block</button>
-
-    <label class="section-label">Variable Allocations (%)</label>
-    <div id="remainingCaption" class="section-caption"></div>
-    <div id="percentContainer"></div>
-    <button class="btn-add" id="addPercentBtn">+ Add Percentage Category</button>
-
-    <div class="timeline" id="visualizer">
+    <!-- Day window, shown as the wake→bed timeline with NOW. Tap to edit wake/bed. -->
+    <div class="timeline" id="visualizer" role="button" tabindex="0" aria-label="Edit day window" title="Tap to edit wake / bed times">
         <div class="tl-bar">
             <div class="tl-past" id="tlPast"></div>
             <div class="tl-segs" id="tlSegs"></div>
@@ -60,9 +29,15 @@
         <div class="tl-ticks" id="tlTicks"></div>
     </div>
     <div id="vizCaption" class="viz-caption"></div>
-    <div id="warning" class="total-warning">Total percentage exceeds 100%!</div>
 
-    <div class="results-list" id="resultsList"></div>
+    <div id="fixedContainer"></div>
+    <button class="btn-add" id="addFixedBtn">+ Add fixed block</button>
+
+    <div id="remainingCaption" class="section-caption"></div>
+    <div id="percentContainer"></div>
+    <button class="btn-add" id="addPercentBtn">+ Add percentage</button>
+
+    <div id="warning" class="total-warning">Total percentage exceeds 100%!</div>
 
     <button class="btn-reset" id="resetBtn">Reset the Day</button>
 </div>
@@ -103,6 +78,33 @@
             <button class="btn-confirm" id="doneConfirm"><span class="htc-label">Confirm</span></button>
             <button class="btn-cancel" id="doneCancel">Cancel</button>
         </div>
+    </div>
+</div>
+
+<!-- Per-category edit bottom-sheet (built dynamically in app.js) -->
+<div class="sheet-backdrop" id="editBackdrop" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="sheet" id="editSheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+            <div class="sheet-title" id="editTitle">Edit</div>
+            <button class="sheet-close" id="editClose" aria-label="Close edit">✕</button>
+        </div>
+        <div class="sheet-body" id="editBody"></div>
+        <div class="sheet-actions">
+            <button class="btn-danger" id="editDelete">Delete category</button>
+        </div>
+    </div>
+</div>
+
+<!-- Day window bottom-sheet (built dynamically in app.js) -->
+<div class="sheet-backdrop" id="dayBackdrop" role="dialog" aria-modal="true" aria-labelledby="dayTitle">
+    <div class="sheet" id="daySheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+            <div class="sheet-title" id="dayTitle">Day Window</div>
+            <button class="sheet-close" id="dayClose" aria-label="Close day window">✕</button>
+        </div>
+        <div class="sheet-body" id="dayBody"></div>
     </div>
 </div>
 

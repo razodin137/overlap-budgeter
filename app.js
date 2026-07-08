@@ -51,7 +51,7 @@
         wake: DEFAULT_WAKE,
         bed: DEFAULT_BED,
         multitask: false,
-        mode: 'edit',
+        mode: 'run',      // the app now lives in the run view; editing is per-category via hold-to-edit
         nowMode: false,    // "Start from NOW" reflow active?
         nowBaseline: {},   // id → elapsedOf(b) snapshot (seconds) at the moment nowMode engaged
         fixed: [],
@@ -83,7 +83,7 @@
                     wake: typeof s.wake === 'string' ? s.wake : DEFAULT_WAKE,
                     bed: typeof s.bed === 'string' ? s.bed : DEFAULT_BED,
                     multitask: !!s.multitask,
-                    mode: (s.mode === 'run') ? 'run' : 'edit',
+                    mode: 'run',
                     nowMode: !!s.nowMode,
                     nowBaseline: (s.nowBaseline && typeof s.nowBaseline === 'object') ? s.nowBaseline : {},
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
@@ -283,12 +283,14 @@
     function addFixed() {
         const b = { id: uid(), name: 'New Block', hours: 1, time: '', done: false, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] };
         state.fixed.push(b);
-        save(); renderStructure(); focusName(b.id);
+        save(); renderStructure();
+        requestAnimationFrame(() => openEditSheet(b, 'fixed'));
     }
     function addPercent() {
         const b = { id: uid(), name: 'New Cat', percent: 0, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] };
         state.percent.push(b);
-        save(); renderStructure(); focusName(b.id);
+        save(); renderStructure();
+        requestAnimationFrame(() => openEditSheet(b, 'percent'));
     }
     function removeBlock(listKey, id) {
         const list = state[listKey];
@@ -315,10 +317,6 @@
         clearTimeout(undoTimer);
         hideToast();
         save(); renderStructure();
-    }
-    function focusName(id) {
-        const row = document.querySelector(`[data-id="${id}"]`);
-        if (row && state.mode === 'edit') { const inp = row.querySelector('input[type="text"]'); if (inp) inp.focus(); }
     }
 
     // --- Toast (shared by undo / alarm) ---
@@ -402,6 +400,7 @@
             if (isPercent) { b.done ? toggleDonePercent(b) : openDoneSlider(b); }
             else toggleDone(b);
         });
+        doneBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });   // don't start a hold-to-edit
 
         const rm = document.createElement('button');
         rm.className = 'btn-remove'; rm.textContent = '×';
@@ -437,11 +436,39 @@
         if (time) row.insertBefore(time, num);   // fixed rows: name | time | hrs | …
         if (doneBtn) row.insertBefore(doneBtn, rm);   // … start/stop | Done | remove
 
-        // Run mode: tap the whole row to start/stop. (Edit mode uses the button.)
-        row.addEventListener('click', (e) => {
-            if (state.mode !== 'run') return;
-            toggleBlock(listKey, b.id);
+        // Hold-to-edit: a long press (~450ms) opens the edit sheet; a quick tap
+        // toggles the timer. Movement past a small threshold cancels the hold so
+        // vertical page scrolling still works on touch. Done button is excluded
+        // (it has its own click handler and stopPropagation).
+        let holdTimer = null, held = false, moved = false, sx = 0, sy = 0;
+        row.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.btn-done')) return;     // Done handles itself
+            held = false; moved = false;
+            sx = e.clientX; sy = e.clientY;
+            holdTimer = setTimeout(() => {
+                held = true;
+                if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
+                openEditSheet(b, listKey);
+            }, 450);
         });
+        row.addEventListener('pointermove', (e) => {
+            if (!holdTimer) return;
+            if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) {
+                moved = true; clearTimeout(holdTimer); holdTimer = null;
+            }
+        });
+        const endPress = (e) => {
+            if (!holdTimer && !held && !moved) return;   // nothing started here
+            clearTimeout(holdTimer); holdTimer = null;
+            if (held) { held = false; return; }          // hold already opened the sheet
+            if (moved) { moved = false; return; }        // was a scroll/drag
+            // clean quick tap → toggle the timer
+            e.preventDefault();
+            ensureAudio();
+            toggleBlock(listKey, b.id);
+        };
+        row.addEventListener('pointerup', endPress);
+        row.addEventListener('pointercancel', () => { clearTimeout(holdTimer); holdTimer = null; held = false; moved = false; });
 
         return row;
     }
@@ -857,19 +884,12 @@
         save();
     }
 
-    // --- Run / Edit mode ---
+    // --- Run view is the home. There is no edit mode anymore; editing happens
+    //     per-category through the hold-to-edit bottom-sheet. applyMode just pins
+    //     the run-view class and keeps name inputs read-only (they're display labels). ---
     function applyMode() {
-        document.getElementById('app').classList.toggle('mode-run', state.mode === 'run');
-        const modeBtn = document.getElementById('modeBtn');
-        modeBtn.textContent = state.mode === 'run' ? 'Edit' : 'Run';
-        modeBtn.setAttribute('aria-label', state.mode === 'run' ? 'Switch to edit mode' : 'Switch to run mode');
-        // Name inputs become read-only in run mode (tapping the row toggles instead).
-        document.querySelectorAll('.category-row input[type="text"]').forEach(n => n.readOnly = (state.mode === 'run'));
-    }
-    function toggleMode() {
-        state.mode = state.mode === 'run' ? 'edit' : 'run';
-        if (state.mode === 'run' && document.activeElement && document.activeElement.blur) document.activeElement.blur();
-        save(); applyMode(); renderStructure();
+        document.getElementById('app').classList.add('mode-run');
+        document.querySelectorAll('.category-row input[type="text"]').forEach(n => n.readOnly = true);
     }
 
     // --- Start from NOW: reflow the remainder (now → bed) across budgets ---
@@ -1076,6 +1096,235 @@
         updateLive();
     }
 
+    // --- Hold-to-edit bottom-sheets (per-category + day window) ---
+    // The app lives in the run view; editing is a mobile bottom-sheet with scroll
+    // wheels for time and a slider for percentages. Built dynamically per block.
+    const WHEEL_ITEM_H = 40;
+    let editCtx = null;       // { b, listKey, wheels..., apply() }
+    let dayCtx = null;
+
+    /* A scroll-snap wheel. labels[] is the displayed text per index; the caller
+       maps the selected index back to a semantic value. Returns { el, setIndex }. */
+    function createWheel(labels, startIndex, onIndex) {
+        const wrap = document.createElement('div');
+        wrap.className = 'wheel';
+        const addSpacer = () => { const s = document.createElement('div'); s.className = 'wheel-item wheel-spacer'; wrap.appendChild(s); };
+        addSpacer(); addSpacer();
+        labels.forEach((lbl, i) => {
+            const it = document.createElement('div');
+            it.className = 'wheel-item';
+            it.textContent = lbl;
+            it.dataset.i = i;
+            wrap.appendChild(it);
+        });
+        addSpacer(); addSpacer();
+        let cur = startIndex;
+        let raf = 0;
+        const read = () => {
+            const i = Math.max(0, Math.min(labels.length - 1, Math.round(wrap.scrollTop / WHEEL_ITEM_H)));
+            if (i !== cur) { cur = i; onIndex(i); }
+        };
+        wrap.addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(read); });
+        requestAnimationFrame(() => { wrap.scrollTop = startIndex * WHEEL_ITEM_H; });
+        return { el: wrap, setIndex(i) { cur = i; wrap.scrollTop = i * WHEEL_ITEM_H; } };
+    }
+    const range = (n) => Array.from({ length: n }, (_, i) => i);
+    const HOUR_LABELS = range(24).map(h => String(h));           // 0–23
+    const MIN_LABELS  = range(12).map(m => String(m * 5));        // 0,5,…,55
+    const pad2 = (n) => String(n).padStart(2, '0');
+    function timeToHM(t) {                                       // "08:30" → {h:8, m:30}
+        if (typeof t !== 'string' || !t.includes(':')) return { h: 0, m: 0 };
+        const [h, m] = t.split(':').map(n => parseInt(n, 10) || 0);
+        return { h: Math.max(0, Math.min(23, h)), m: Math.max(0, Math.min(55, m)) };
+    }
+
+    function openSheet(backdropId) {
+        const bd = document.getElementById(backdropId);
+        bd.classList.add('show');
+    }
+    function closeSheet(backdropId) {
+        document.getElementById(backdropId).classList.remove('show');
+    }
+    function buildSectionLabel(text) {
+        const l = document.createElement('div');
+        l.className = 'sheet-label';
+        l.textContent = text;
+        return l;
+    }
+    function buildWheelGroup(labelText, wheel) {
+        const g = document.createElement('div');
+        g.className = 'wheel-group';
+        g.appendChild(buildSectionLabel(labelText));
+        const wrap = document.createElement('div');
+        wrap.className = 'wheel-wrap';
+        const band = document.createElement('div'); band.className = 'wheel-band';
+        wrap.appendChild(wheel.el);
+        wrap.appendChild(band);
+        g.appendChild(wrap);
+        return g;
+    }
+
+    function openEditSheet(b, listKey) {
+        const isPercent = listKey === 'percent';
+        editCtx = { b, listKey };
+        document.getElementById('editTitle').textContent = 'Edit';
+        const body = document.getElementById('editBody');
+        body.innerHTML = '';
+
+        // Name
+        const nameWrap = document.createElement('div');
+        nameWrap.className = 'sheet-field';
+        nameWrap.appendChild(buildSectionLabel('Name'));
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text'; nameInput.value = b.name; nameInput.className = 'sheet-input';
+        nameInput.maxLength = 40;
+        nameInput.addEventListener('input', () => { b.name = nameInput.value; save(); updateLive(); });
+        nameWrap.appendChild(nameInput);
+        body.appendChild(nameWrap);
+
+        if (isPercent) {
+            // Percent slider
+            const pctWrap = document.createElement('div');
+            pctWrap.className = 'sheet-field';
+            pctWrap.appendChild(buildSectionLabel('Percentage of remaining'));
+            const readout = document.createElement('div');
+            readout.className = 'pct-readout'; readout.textContent = (b.percent || 0) + '%';
+            const slider = document.createElement('input');
+            slider.type = 'range'; slider.min = 0; slider.max = 100; slider.step = 1;
+            slider.value = b.percent || 0; slider.className = 'pct-slider';
+            slider.addEventListener('input', () => {
+                b.percent = parseInt(slider.value, 10) || 0;
+                b.alarmed = false;
+                readout.textContent = b.percent + '%';
+                save(); updateLive();
+            });
+            pctWrap.appendChild(readout);
+            pctWrap.appendChild(slider);
+            body.appendChild(pctWrap);
+        } else {
+            // Hours + minutes wheels for the budget
+            const totalMin = Math.round((b.hours || 0) * 60);
+            let h = Math.min(23, Math.floor(totalMin / 60));
+            let m = Math.min(55, (totalMin % 60));
+            // round minutes to nearest 5
+            m = Math.round(m / 5) * 5; if (m >= 60) { m = 0; h = Math.min(23, h + 1); }
+            const apply = () => {
+                b.hours = h + m / 60;
+                b.alarmed = false;
+                save(); updateLive();
+            };
+            const hWheel = createWheel(HOUR_LABELS, h, (i) => { h = i; apply(); });
+            const mWheel = createWheel(MIN_LABELS, m / 5, (i) => { m = i * 5; apply(); });
+            body.appendChild(buildWheelGroup('Hours', hWheel));
+            body.appendChild(buildWheelGroup('Minutes', mWheel));
+
+            // Optional start-time-of-day anchor
+            const anchorWrap = document.createElement('div');
+            anchorWrap.className = 'sheet-field anchor-field';
+            const anchorRow = document.createElement('label');
+            anchorRow.className = 'anchor-row';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.checked = !!b.time;
+            const cbLabel = document.createElement('span');
+            cbLabel.textContent = 'Anchor to a start time';
+            anchorRow.appendChild(cb); anchorRow.appendChild(cbLabel);
+            anchorWrap.appendChild(anchorRow);
+
+            const startWheelsHost = document.createElement('div');
+            startWheelsHost.className = 'anchor-wheels' + (cb.checked ? '' : ' hidden');
+            let sh = timeToHM(b.time).h, sm = Math.round(timeToHM(b.time).m / 5) * 5;
+            const applyStart = () => {
+                if (!cb.checked) { b.time = ''; save(); updateLive(); return; }
+                b.time = pad2(sh) + ':' + pad2(sm);
+                save(); updateLive();
+            };
+            const shWheel = createWheel(HOUR_LABELS, sh, (i) => { sh = i; applyStart(); });
+            const smWheel = createWheel(MIN_LABELS, sm / 5, (i) => { sm = i * 5; applyStart(); });
+            startWheelsHost.appendChild(buildWheelGroup('Start hour', shWheel));
+            startWheelsHost.appendChild(buildWheelGroup('Start min', smWheel));
+            anchorWrap.appendChild(startWheelsHost);
+            cb.addEventListener('change', () => {
+                startWheelsHost.classList.toggle('hidden', !cb.checked);
+                applyStart();
+            });
+            body.appendChild(anchorWrap);
+        }
+
+        // Delete button reflects category type
+        document.getElementById('editDelete').onclick = () => {
+            removeBlock(listKey, b.id);
+            closeEditSheet();
+        };
+        openSheet('editBackdrop');
+        // focus the name input shortly after the sheet is shown
+        requestAnimationFrame(() => { try { nameInput.focus({ preventScroll: true }); } catch (e) {} });
+    }
+    function closeEditSheet() { closeSheet('editBackdrop'); editCtx = null; }
+
+    function openDaySheet() {
+        const body = document.getElementById('dayBody');
+        body.innerHTML = '';
+
+        const wh = timeToHM(state.wake), bh = timeToHM(state.bed);
+        let wH = wh.h, wM = Math.round(wh.m / 5) * 5;
+        let bH = bh.h, bM = Math.round(bh.m / 5) * 5;
+        const dayLenEl = document.createElement('div');
+        dayLenEl.className = 'day-readout';
+
+        const applyDay = () => {
+            state.wake = pad2(wH) + ':' + pad2(wM);
+            state.bed  = pad2(bH) + ':' + pad2(bM);
+            save();
+            applyDayLabel();
+            renderTicks(document.getElementById('tlTicks'));
+            updateLive();
+            dayLenEl.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';
+        };
+
+        const wakeGroup = document.createElement('div');
+        wakeGroup.className = 'sheet-field';
+        wakeGroup.appendChild(buildSectionLabel('Wake'));
+        const wakeWheels = document.createElement('div'); wakeWheels.className = 'wheel-pair';
+        wakeWheels.appendChild(buildWheelGroup('Hour', createWheel(HOUR_LABELS, wH, (i) => { wH = i; applyDay(); })));
+        wakeWheels.appendChild(buildWheelGroup('Min', createWheel(MIN_LABELS, wM / 5, (i) => { wM = i * 5; applyDay(); })));
+        wakeGroup.appendChild(wakeWheels);
+        body.appendChild(wakeGroup);
+
+        const bedGroup = document.createElement('div');
+        bedGroup.className = 'sheet-field';
+        bedGroup.appendChild(buildSectionLabel('Bed'));
+        const bedWheels = document.createElement('div'); bedWheels.className = 'wheel-pair';
+        bedWheels.appendChild(buildWheelGroup('Hour', createWheel(HOUR_LABELS, bH, (i) => { bH = i; applyDay(); })));
+        bedWheels.appendChild(buildWheelGroup('Min', createWheel(MIN_LABELS, bM / 5, (i) => { bM = i * 5; applyDay(); })));
+        bedGroup.appendChild(bedWheels);
+        body.appendChild(bedGroup);
+
+        body.appendChild(dayLenEl);
+        applyDay();   // set the readout
+
+        // Multitask toggle
+        const mtWrap = document.createElement('div');
+        mtWrap.className = 'sheet-field toggle-field';
+        const switchLabel = document.createElement('label');
+        switchLabel.className = 'switch';
+        const mtInput = document.createElement('input');
+        mtInput.type = 'checkbox'; mtInput.checked = state.multitask;
+        const track = document.createElement('span'); track.className = 'track';
+        switchLabel.appendChild(mtInput); switchLabel.appendChild(track);
+        const mtText = document.createElement('span');
+        mtText.className = 'toggle-label';
+        mtText.textContent = 'Allow overlapping timers (off = starting one stops the rest)';
+        mtWrap.appendChild(switchLabel); mtWrap.appendChild(mtText);
+        mtInput.addEventListener('change', () => {
+            state.multitask = mtInput.checked;
+            updateZenVisibility(); save();
+        });
+        body.appendChild(mtWrap);
+
+        openSheet('dayBackdrop');
+    }
+    function closeDaySheet() { closeSheet('dayBackdrop'); }
+
     // --- Init ---
     function init() {
         const had = load();
@@ -1086,37 +1335,32 @@
         applyNowLabel();
         applyDayLabel();
 
-        // Wake / bed define the day (and thus the bank). Either changing reflows
-        // the timeline + ticks and recomputes the resplit.
-        const wakeInput = document.getElementById('wakeInput');
-        const bedInput = document.getElementById('bedInput');
-        wakeInput.value = state.wake;
-        bedInput.value = state.bed;
-        const onDayChange = () => {
-            state.wake = wakeInput.value || DEFAULT_WAKE;
-            state.bed = bedInput.value || DEFAULT_BED;
-            save();
-            applyDayLabel();
-            renderTicks(document.getElementById('tlTicks'));
-            updateLive();
-        };
-        wakeInput.addEventListener('input', onDayChange);
-        bedInput.addEventListener('input', onDayChange);
+        // Day window is edited through a bottom-sheet opened by tapping the
+        // timeline (the wake→bed bar at the top of the run view).
+        const visualizer = document.getElementById('visualizer');
+        visualizer.addEventListener('click', openDaySheet);
+        visualizer.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDaySheet(); }
+        });
 
         document.getElementById('nowBtn').addEventListener('click', () => { ensureAudio(); toggleNow(); });
-
-        const mt = document.getElementById('multitask');
-        mt.checked = state.multitask;
-        mt.addEventListener('change', () => {
-            state.multitask = mt.checked;
-            updateZenVisibility();
-            save();
-        });
 
         document.getElementById('addFixedBtn').addEventListener('click', addFixed);
         document.getElementById('addPercentBtn').addEventListener('click', addPercent);
         document.getElementById('toastUndo').addEventListener('click', doUndo);
-        document.getElementById('modeBtn').addEventListener('click', toggleMode);
+
+        // Bottom-sheet open/close wiring (per-category edit + day window).
+        document.getElementById('editClose').addEventListener('click', closeEditSheet);
+        document.getElementById('dayClose').addEventListener('click', closeDaySheet);
+        const editBackdrop = document.getElementById('editBackdrop');
+        const dayBackdrop = document.getElementById('dayBackdrop');
+        editBackdrop.addEventListener('click', (e) => { if (e.target === editBackdrop) closeEditSheet(); });
+        dayBackdrop.addEventListener('click', (e) => { if (e.target === dayBackdrop) closeDaySheet(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (editBackdrop.classList.contains('show')) closeEditSheet();
+            else if (dayBackdrop.classList.contains('show')) closeDaySheet();
+        });
 
         // Zen: button toggles the overlay; auto-pop happens on solo starts.
         document.getElementById('zenBtn').addEventListener('click', toggleZen);
