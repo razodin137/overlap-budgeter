@@ -129,27 +129,30 @@
       // restore Breakfast so repeated runs are stable
       b.startedAt = orig.sa; b.banked = orig.bk; save();
 
-      // 9. Switching into NOW mode must not reset the counted time spent.
-      // The simplest guarantee is that the per-block elapsed counter and the
-      // total-spent caption are identical in Plan and Start-from-NOW modes.
-      var pct = state.percent[0];
-      var pctOrig = { banked: pct.banked, startedAt: pct.startedAt, done: pct.done, usedSec: pct.usedSec };
-      if (state.nowMode) W.eval('toggleNow()');   // start in plan mode
-      pct.banked = 300; pct.startedAt = null; pct.done = false; pct.usedSec = 0;
-      updateLive();
-      var planRow = W.eval('rowBudget(state.percent[0], true, remainingHours())');
-      var planTotal = W.eval('liveAllocs.totalSpentSec');
-      W.eval('toggleNow()');
-      var nowRow = W.eval('rowBudget(state.percent[0], true, remainingHours())');
-      var nowTotal = W.eval('liveAllocs.totalSpentSec');
-      assert('NOW mode keeps the per-block spent counter', nowRow.secAgainst === planRow.secAgainst, planRow.secAgainst + 's -> ' + nowRow.secAgainst + 's');
-      assert('NOW mode keeps the total spent caption', nowTotal === planTotal, planTotal + 's -> ' + nowTotal + 's');
-      W.eval('toggleNow()');
-      var backRow = W.eval('rowBudget(state.percent[0], true, remainingHours())');
-      assert('leaving NOW mode still keeps the spent counter', backRow.secAgainst === planRow.secAgainst, planRow.secAgainst + 's -> ' + backRow.secAgainst + 's');
-      // restore category so repeated runs are stable
-      pct.banked = pctOrig.banked; pct.startedAt = pctOrig.startedAt; pct.done = pctOrig.done; pct.usedSec = pctOrig.usedSec;
+      // 9. "Start day now" sets wake to now, bed to now + slider hours, and erases
+      // the day's logged timers. Categories and budgets stay. (Replaces the old
+      // Plan/Start-from-NOW mode-switch test — that mode was removed.)
+      var pct9 = state.percent[0];
+      var orig9 = { wake: state.wake, bed: state.bed, banked: pct9.banked, startedAt: pct9.startedAt, done: pct9.done, usedSec: pct9.usedSec };
+      pct9.banked = 300; pct9.startedAt = null; pct9.done = false; pct9.usedSec = 0;
       save();
+      W.eval('openStartNowModal()');
+      W.eval('startNowSliderEl.value = 2');      // end 2 hours from now
+      W.eval('confirmStartNow()');
+      var nowM9 = W.eval('nowMin()');
+      var wakeMin9 = W.eval('timeToMin(state.wake)');
+      var bedMin9 = W.eval('timeToMin(state.bed)');
+      var expectBed9 = (nowM9 + 120) % 1440;
+      assert('start day now erases logged timers', state.percent[0].banked === 0, 'banked=' + state.percent[0].banked);
+      assert('start day now sets wake to ~now', Math.abs(wakeMin9 - nowM9) <= 1, wakeMin9 + ' vs ' + nowM9);
+      assert('start day now sets bed to now + slider hours', Math.abs(bedMin9 - expectBed9) <= 1, bedMin9 + ' vs ' + expectBed9);
+      assert('nowMode field removed', !('nowMode' in state), 'nowMode present');
+      assert('toggleNow removed', W.eval('typeof toggleNow') === 'undefined', 'toggleNow still defined');
+      // restore so repeated runs and later sections stay stable
+      state.wake = orig9.wake; state.bed = orig9.bed;
+      pct9.banked = orig9.banked; pct9.startedAt = orig9.startedAt; pct9.done = orig9.done; pct9.usedSec = orig9.usedSec;
+      save();
+      updateLive();
 
       // 10. Only one stopwatch may run at a time.
       var f0 = state.fixed[0], f1 = state.fixed[1];

@@ -14,7 +14,7 @@
         <h1>Time Budget</h1>
         <div class="header-actions">
             <button class="hdr-btn" id="zenBtn" title="Toggle zen focus overlay">Zen</button>
-            <button class="hdr-btn" id="nowBtn" title="Reflow the time left until bed around NOW" aria-pressed="false">Start from NOW</button>
+            <button class="hdr-btn" id="startNowBtn" title="Set wake to now, pick an end time, and re-plan the rest of the day">Start day now</button>
         </div>
     </div>
 
@@ -79,6 +79,22 @@
         <div class="modal-actions">
             <button class="btn-confirm" id="doneConfirm"><span class="htc-label">Confirm</span></button>
             <button class="btn-cancel" id="doneCancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Start day now: set wake to the current time, pick an end time, re-plan the day -->
+<div class="modal-backdrop" id="startNowModal" role="dialog" aria-modal="true" aria-labelledby="startNowTitle">
+    <div class="modal-card">
+        <h2 id="startNowTitle">Start the day from now</h2>
+        <p id="startNowSub">This sets your wake time to now and erases every timer you've already logged today. Your categories and budgets stay.</p>
+        <div class="done-slider-row">
+            <input type="range" id="startNowSlider" min="0" max="24" step="0.25" value="14.5" aria-label="End time in hours from now">
+            <span id="startNowReadout"></span>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-confirm" id="startNowConfirm"><span class="htc-label">Start day</span></button>
+            <button class="btn-cancel" id="startNowCancel">Cancel</button>
         </div>
     </div>
 </div>

@@ -51,7 +51,6 @@
         wake: DEFAULT_WAKE,
         bed: DEFAULT_BED,
         mode: 'run',      // the app now lives in the run view; editing is per-category via hold-to-edit
-        nowMode: false,    // "Start from NOW" reflow active?
         fixed: [],
         percent: [],
     };
@@ -59,7 +58,6 @@
     let undoState = null;
     let undoTimer = null;
     let toastTimer = null;
-    let liveAllocs = null;   // most recent computeNowAllocations() result, shared with updateRow/timeline
 
     // Stable element refs so we never rebuild inputs mid-typing.
     const rowEls = {};   // id -> { row, timer, timerElapsed, timerBudget, btn, progress, progressFill }
@@ -81,7 +79,6 @@
                     wake: typeof s.wake === 'string' ? s.wake : DEFAULT_WAKE,
                     bed: typeof s.bed === 'string' ? s.bed : DEFAULT_BED,
                     mode: 'run',
-                    nowMode: !!s.nowMode,
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
                     percent: Array.isArray(s.percent) ? s.percent.map(norm) : [],
                 };
@@ -197,36 +194,22 @@
         return denom > 0 ? pool * (b.percent || 0) / denom : 0;
     }
 
-    /* ── The period the percent categories split — the only thing that differs
-       between modes. Plan: wake→bed minus fixed blocks. NOW: now→bed minus the
-       fixed blocks still ahead. Done/past fixed blocks already left the wall-clock
-       window, so they don't reduce the time that's left (subtracting them would
-       double-count). This is the same % × period math in both modes; the budget
-       it produces is stable — it does NOT shrink as a stopwatch spends time. ── */
+    /* ── The period the percent categories split: the wake→bed bank minus the
+       fixed blocks reserved out of it. A fixed block reserves its full plan while
+       running, or only its declared spent time once done (leftover reflows to the
+       percent splits). Budget = percent × this period; it is stable — it does NOT
+       shrink as a stopwatch spends time. ── */
     function remainingHours() {
         const bank = bankHours();
         const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
         return Math.max(0, bank - totalFixed);
     }
-    function nowRemainingHours() {
-        const wallLeftH = Math.max(0, (dayBoundsMin().bed - nowMin()) / 60);   // now → bed
-        const fixedAheadH = state.fixed.reduce((s, b) => s + (b.done ? 0 : plannedSec(b) / 3600), 0);
-        return Math.max(0, wallLeftH - fixedAheadH);
-    }
-    function periodHours() { return state.nowMode ? nowRemainingHours() : remainingHours(); }
-
-    /* Snapshot of the NOW period + total spent, for the timeline caption. Per-block
-       budgets come from rowBudget/budgetSecPercent; this just feeds the readouts. */
-    function computeNowAllocations() {
-        const totalSpentSec = [...state.fixed, ...state.percent].reduce((s, b) => s + spentSec(b), 0);
-        return { remainingSec: Math.max(0, nowRemainingHours() * 3600), totalSpentSec, dropped: [] };
-    }
+    function periodHours() { return remainingHours(); }   // kept as an alias for clarity at call sites
 
     /* Shared budget/elapsed pair for a row, zen card, results row, and segment.
-       Budget = percent × period (the mode picks the period). secAgainst is the
-       stopwatch's elapsed — it counts up from zero the same way in both modes, so
-       switching Plan ↔ Start-from-NOW never resets the spent counter; it only
-       changes the budget that counter is compared against. */
+       Budget = percent × period (the period is the wake→bed bank minus fixed
+       reservations). secAgainst is the stopwatch's elapsed — it counts up from
+       zero and is compared against the budget; it never feeds back into it. */
     function rowBudget(b, isPercent) {
         return {
             budget: isPercent ? budgetSecPercent(b, periodHours()) : budgetSecFixed(b),
@@ -574,7 +557,7 @@
         const running = !!b.startedAt;
         const runMode = state.mode === 'run';
 
-        // NOW mode → resplit slice + running elapsed; else plan target + full elapsed.
+        // Budget = percent × period (or the fixed reservation); secAgainst is the stopwatch's elapsed.
         const { budget, secAgainst } = rowBudget(b, isPercent);
 
         // Big display: stopwatch counts up from zero.
@@ -648,14 +631,14 @@
         state.percent.forEach(b => totalPercent += (b.percent || 0));
 
         // ── Timeline geometry. The bar spans wake→bed; segments are absolutely
-        // positioned. In plan mode a fixed block with a start time anchors at that
-        // wall-clock position (otherwise it flows from the cursor); percent blocks
-        // fill the remainder. In NOW mode everything flows now→bed as resplit slices. ──
+        // positioned. A fixed block with a start time anchors at that wall-clock
+        // position (otherwise it flows from the cursor); percent blocks fill the
+        // remainder. ──
         const { wake, len } = dayBoundsMin();
         const dayLenH = dayLengthHours();
         const dayLenSec = dayLenH * 3600;
         const npct = nowPctOfDay();
-        let cursor = state.nowMode ? npct : 0;
+        let cursor = 0;
 
         // Stripes + a growing fill both encode used/budget. The segment is the dim
         // track (the budget span); the .segment-fill child is the bright bar that
@@ -688,37 +671,23 @@
             return len > 0 ? Math.max(0, Math.min(100, ((t - wake) / len) * 100)) : 0;
         };
 
-        if (state.nowMode && liveAllocs) {
-            // NOW mode: percent slices of (now→bed − fixed-ahead), from NOW forward.
-            // Fixed blocks aren't drawn here (their ahead-time is already carved out of
-            // the pool); clear any stale plan-mode geometry so they don't linger on the bar.
-            state.fixed.forEach(b => { const seg = segEls[b.id]; if (seg) seg.style.width = '0%'; });
-            state.percent.forEach(b => {
-                const { budget, secAgainst } = rowBudget(b, true);
-                const w = dayLenSec > 0 ? budget / dayLenSec * 100 : 0;
-                placeSeg(b, cursor, w, budget, secAgainst);
-                const seg = segEls[b.id];
-                if (seg) seg.title = b.name + ' · NOW ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' actual';
-            });
-        } else {
-            // Plan mode: fixed blocks at their start time (or from the cursor), then
-            // percent of the remainder.
-            state.fixed.forEach(b => {
-                const bsec = budgetSecFixed(b);   // = reserve: planned, or actual-once-done
-                const w = dayLenSec > 0 ? (bsec / dayLenSec) * 100 : 0;
-                const left = fixedLeftPct(b);
-                placeSeg(b, left, w, bsec, elapsedOf(b));
-                const seg = segEls[b.id];
-                if (seg) seg.title = b.name + (b.time ? ' @ ' + formatClock(timeToMin(b.time)) : '') + (b.done ? ' · done' : '') + ': ' + formatHumanTime(bsec) + (b.done ? ' taken' : ' budget') + ' · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-            });
-            state.percent.forEach(b => {
-                const bsec = budgetSecPercent(b, remaining);
-                const w = dayLenH > 0 ? (b.percent / 100) * (remaining / dayLenH) * 100 : 0;
-                placeSeg(b, cursor, w, bsec, elapsedOf(b));
-                const seg = segEls[b.id];
-                if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-            });
-        }
+        // Fixed blocks at their start time (or from the cursor), then percent of
+        // the remainder.
+        state.fixed.forEach(b => {
+            const bsec = budgetSecFixed(b);   // = reserve: planned, or actual-once-done
+            const w = dayLenSec > 0 ? (bsec / dayLenSec) * 100 : 0;
+            const left = fixedLeftPct(b);
+            placeSeg(b, left, w, bsec, elapsedOf(b));
+            const seg = segEls[b.id];
+            if (seg) seg.title = b.name + (b.time ? ' @ ' + formatClock(timeToMin(b.time)) : '') + (b.done ? ' · done' : '') + ': ' + formatHumanTime(bsec) + (b.done ? ' taken' : ' budget') + ' · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+        });
+        state.percent.forEach(b => {
+            const bsec = budgetSecPercent(b, remaining);
+            const w = dayLenH > 0 ? (b.percent / 100) * (remaining / dayLenH) * 100 : 0;
+            placeSeg(b, cursor, w, bsec, elapsedOf(b));
+            const seg = segEls[b.id];
+            if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+        });
 
         // Free / unallocated slack fills whatever's left.
         freeSeg.style.left = cursor + '%';
@@ -727,8 +696,8 @@
         const freeHours = (freePct / 100) * dayLenH;
         freeSeg.title = 'Free / unallocated: ' + formatHumanTime(freeHours * 3600);
 
-        // NOW line + dim past track (past track shown only in NOW mode). The NOW
-        // marker paints itself in the color of the single running stopwatch; green when nothing is running.
+        // NOW line + dim past track. The NOW marker paints itself in the color of the
+        // single running stopwatch; green when nothing is running.
         const nowLine = document.getElementById('tlNow');
         if (nowLine) {
             nowLine.style.left = npct + '%';
@@ -743,21 +712,14 @@
             else nowLine.style.removeProperty('--now-color');
         }
         const tlPast = document.getElementById('tlPast');
-        if (tlPast) tlPast.style.width = (state.nowMode ? npct : 0) + '%';
+        if (tlPast) tlPast.style.width = npct + '%';
 
         renderBlobs(npct);
 
-        // Caption: NOW summary in NOW mode, plan summary otherwise.
+        // Caption: plan summary — time left to split after fixed blocks, plus slack.
         const caption = document.getElementById('vizCaption');
-        if (state.nowMode && liveAllocs) {
-            const parts = [formatHumanTime(liveAllocs.remainingSec) + ' left to split',
-                           formatHumanTime(liveAllocs.totalSpentSec) + ' spent'];
-            if (liveAllocs.dropped.length) parts.push(liveAllocs.dropped.join(', ') + ' over budget');
-            caption.textContent = parts.join('  ·  ');
-        } else {
-            caption.textContent =
-                formatHumanTime(remaining * 3600) + ' left to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
-        }
+        caption.textContent =
+            formatHumanTime(remaining * 3600) + ' left to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
 
         document.getElementById('warning').style.display = totalPercent > 100 ? 'block' : 'none';
         buildResults(bank, remaining, totalPercent);
@@ -871,9 +833,6 @@
     }
 
     function updateLive() {
-        // Compute the NOW snapshot BEFORE recalc: recalc's NOW-mode caption reads
-        // liveAllocs, so it must be fresh, not one tick stale.
-        liveAllocs = computeNowAllocations();
         const { remaining } = recalc();
         state.fixed.forEach(b => updateRow(b, false, remaining));
         state.percent.forEach(b => updateRow(b, true, remaining));
@@ -881,18 +840,22 @@
         updateZenVisibility();    // auto-show/hide as timers start and stop
     }
 
-    // --- Reset the day: zero out all time, keep the structure ---
-    function resetDay() {
+    // Zero every block's logged time for a fresh start (used by both "reset the day"
+    // and "start day now"). Keeps category structure; un-finishes percent categories
+    // so the reflow starts clean. Fixed `done` is left as-is (pre-existing behavior).
+    function zeroTimers() {
         [...state.fixed, ...state.percent].forEach(b => {
             b.banked = 0;
             b.startedAt = null;
             b.alarmed = false;
             b.intervals = [];
         });
-        // A fresh day un-finishes percent categories (clear settled usage) so the
-        // reflow starts clean. (Fixed `done` is left as-is — pre-existing behavior.)
         state.percent.forEach(b => { b.done = false; b.usedSec = 0; });
-        state.nowMode = false;
+    }
+
+    // --- Reset the day: zero out all time, keep the structure ---
+    function resetDay() {
+        zeroTimers();
         zenOpen = false;        // a fresh day starts with zen closed; a solo start reopens it
         updateZenVisibility();
         save();
@@ -942,25 +905,47 @@
         document.querySelectorAll('.category-row input[type="text"]').forEach(n => n.readOnly = true);
     }
 
-    // --- Start from NOW: reflow the remainder (now → bed) across budgets ---
-    // Engaging resplits the flexible pool from the current wall-clock time forward.
-    // The total time actually spent keeps counting up, so switching modes never
-    // resets a block's spent counter — it only changes the budget it is compared to.
-    function applyNowLabel() {
-        const btn = document.getElementById('nowBtn');
-        if (!btn) return;
-        btn.textContent = state.nowMode ? 'Plan' : 'Start from NOW';
-        btn.setAttribute('aria-pressed', state.nowMode ? 'true' : 'false');
-        btn.classList.toggle('active', state.nowMode);
-    }
-    function toggleNow() {
-        state.nowMode = !state.nowMode;
-        if (state.nowMode) {
-            // Re-arm alarms against the new resplit budgets.
-            [...state.fixed, ...state.percent].forEach(b => { b.alarmed = false; });
+    // --- Start day now: set wake to the current wall-clock, pick an end time, and
+    //     re-plan the rest of the day. Erases the day's logged timers (categories
+    //     and budgets stay) via the shared zeroTimers() helper. ---
+    let startNowSliderEl = null, startNowReadoutEl = null, startNowModalEl = null;
+
+    function openStartNowModal() {
+        if (!startNowModalEl) {
+            startNowModalEl = document.getElementById('startNowModal');
+            startNowSliderEl = document.getElementById('startNowSlider');
+            startNowReadoutEl = document.getElementById('startNowReadout');
         }
-        applyNowLabel();
-        save(); updateLive();
+        // Default the end time to the current bed, expressed as hours-from-now.
+        const defH = Math.max(0, Math.min(24, (dayBoundsMin().bed - nowMin()) / 60));
+        startNowSliderEl.min = 0; startNowSliderEl.max = 24; startNowSliderEl.step = 0.25;
+        startNowSliderEl.value = defH;
+        updateStartNowReadout();
+        startNowModalEl.classList.add('show');
+        document.getElementById('startNowCancel').focus();   // safe default: non-destructive
+    }
+    function updateStartNowReadout() {
+        if (!startNowReadoutEl || !startNowSliderEl) return;
+        const h = +startNowSliderEl.value || 0;
+        const endMin = (nowMin() + Math.round(h * 60)) % 1440;
+        startNowReadoutEl.textContent = formatClock(endMin) + '  ·  ' + formatHumanTime(h * 3600) + ' to budget';
+    }
+    function closeStartNowModal() {
+        if (startNowModalEl) startNowModalEl.classList.remove('show');
+    }
+    function confirmStartNow() {
+        const h = +startNowSliderEl.value || 0;
+        const endMin = (nowMin() + Math.round(h * 60)) % 1440;
+        const nowM = nowMin();
+        state.wake = pad2(Math.floor(nowM / 60)) + ':' + pad2(nowM % 60);
+        state.bed  = pad2(Math.floor(endMin / 60)) + ':' + pad2(endMin % 60);   // dayBoundsMin wraps bed<=wake
+        zeroTimers();
+        zenOpen = false;
+        updateZenVisibility();
+        save();
+        renderTicks(document.getElementById('tlTicks'));
+        closeStartNowModal();
+        renderStructure();
     }
 
     // --- Zen mode: full-screen focus on the single running stopwatch ---
@@ -1366,7 +1351,6 @@
             save();
         }
         applyMode();
-        applyNowLabel();
 
         // Day window is edited through a bottom-sheet opened by tapping the
         // timeline (the wake→bed bar at the top of the run view).
@@ -1379,7 +1363,7 @@
         const vizCaption = document.getElementById('vizCaption');
         if (vizCaption) vizCaption.addEventListener('click', openDaySheet);
 
-        document.getElementById('nowBtn').addEventListener('click', () => { ensureAudio(); toggleNow(); });
+        document.getElementById('startNowBtn').addEventListener('click', () => { ensureAudio(); openStartNowModal(); });
 
         document.getElementById('addFixedBtn').addEventListener('click', addFixed);
         document.getElementById('addPercentBtn').addEventListener('click', addPercent);
@@ -1439,6 +1423,17 @@
         doneSlider.addEventListener('input', updateDoneVal);
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && doneModal.classList.contains('show')) closeDoneModal();
+        });
+
+        // Start-day-now modal: warning + end-time slider, plain click confirm.
+        const startNowModal = document.getElementById('startNowModal');
+        const startNowSlider = document.getElementById('startNowSlider');
+        document.getElementById('startNowConfirm').addEventListener('click', confirmStartNow);
+        document.getElementById('startNowCancel').addEventListener('click', closeStartNowModal);
+        startNowModal.addEventListener('click', (e) => { if (e.target === startNowModal) closeStartNowModal(); });
+        startNowSlider.addEventListener('input', updateStartNowReadout);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && startNowModal.classList.contains('show')) closeStartNowModal();
         });
 
         // Keyboard: Ctrl/Cmd+Z undoes a remove.

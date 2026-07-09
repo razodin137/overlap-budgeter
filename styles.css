@@ -515,6 +515,7 @@
         .done-slider-row { display: flex; align-items: center; gap: 14px; margin: 0 0 24px; }
         #doneSlider { flex: 1; accent-color: var(--primary-highlight); cursor: pointer; }
         #doneVal { min-width: 72px; text-align: right; color: var(--text-dim); font-size: 0.85rem; }
+        #startNowReadout { min-width: 150px; text-align: right; color: var(--text-dim); font-size: 0.85rem; white-space: nowrap; }
         #doneConfirm { border-color: var(--primary-highlight); }
         #doneConfirm:hover { background: rgba(58,134,255,0.14); }
 
@@ -605,8 +606,6 @@
 
         /* Zen button lights up while zen is active */
         .hdr-btn.active { background: var(--primary-highlight); color: #fff; border-color: var(--primary-highlight); }
-        /* NOW button lights up green while the reflow is active (green = "present"). */
-        #nowBtn.active { background: var(--success); color: #0a0a0a; border-color: var(--success); }
 
         /* Mobile expand chevron — hidden on desktop and in run mode; shown only
            inside the mobile media query for edit-mode rows. */
