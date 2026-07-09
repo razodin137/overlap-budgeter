@@ -130,9 +130,13 @@
         return b.banked + (b.startedAt ? Math.floor((nowMs() - b.startedAt) / 1000) : 0);
     }
     // Time actually charged against a block's budget: the running elapsed total, except
-    // for done percent categories, which settle on the amount the user declared.
+    // for done blocks, which settle on the amount the user declared via the done slider.
     function spentSec(b) {
-        return (state.percent.some(x => x.id === b.id) && b.done) ? (b.usedSec || 0) : elapsedOf(b);
+        if (!b.done) return elapsedOf(b);
+        const isPercent = state.percent.some(x => x.id === b.id);
+        // Percent categories settle exactly on the declared value; fixed blocks fall
+        // back to the stopwatch's elapsed total when no value has been recorded yet.
+        return isPercent ? (b.usedSec || 0) : (b.usedSec || elapsedOf(b));
     }
     function startBlock(b) {
         if (b.startedAt) return;
@@ -149,7 +153,7 @@
     // DONE: stop the timer (banking what was spent) and release any leftover planned
     // time back to the percent splits. Toggling again undoes it (re-reserves the plan).
     function toggleDone(b) {
-        if (b.done) { b.done = false; }
+        if (b.done) { b.done = false; b.usedSec = 0; }
         else { if (b.startedAt) stopBlock(b); b.done = true; b.alarmed = false; }
         save(); updateLive();
     }
@@ -177,7 +181,7 @@
     // any leftover flows back into the percent splits (their budgets grow). This is the
     // single knob both the timeline layout and the percent split read from.
     function plannedSec(b) { return (b.hours || 0) * 3600; }
-    function reserveSec(b) { return b.done ? Math.min(plannedSec(b), elapsedOf(b)) : plannedSec(b); }
+    function reserveSec(b) { return b.done ? Math.min(plannedSec(b), spentSec(b)) : plannedSec(b); }
     function budgetSecFixed(b) { return reserveSec(b); }
     // A percent block's budget. Done percent blocks settle at their declared usage
     // (usedSec); the leftover (claim − all done usage) reflows to the non-done blocks
@@ -395,11 +399,11 @@
         doneBtn.className = 'btn-done';
         doneBtn.title = isPercent
             ? 'Mark done — declare time used and reflow the rest to other categories (tap again to undo)'
-            : 'Mark done — release any leftover time to your other categories (tap again to undo)';
+            : 'Mark done — declare time used and release any leftover to your other categories (tap again to undo)';
         doneBtn.addEventListener('click', (e) => {
             e.stopPropagation(); ensureAudio();
-            if (isPercent) { b.done ? toggleDonePercent(b) : openDoneSlider(b); }
-            else toggleDone(b);
+            if (b.done) { isPercent ? toggleDonePercent(b) : toggleDone(b); }
+            else openDoneSlider(b);
         });
         doneBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });   // don't start a hold-to-edit
 
@@ -1080,7 +1084,9 @@
             doneValEl = document.getElementById('doneVal');
         }
         document.getElementById('doneTitle').textContent = `Mark “${b.name}” done`;
-        const budgetMin = Math.floor(budgetSecPercent(b, periodHours()) / 60);
+        const isPercent = state.percent.some(x => x.id === b.id);
+        const budgetSec = isPercent ? budgetSecPercent(b, periodHours()) : plannedSec(b);
+        const budgetMin = Math.floor(budgetSec / 60);
         const elapsedMin = Math.floor(elapsedOf(b) / 60);
         const maxMin = Math.max(budgetMin, elapsedMin, 0);
         doneSliderEl.min = 0; doneSliderEl.max = maxMin; doneSliderEl.step = 1;
@@ -1102,6 +1108,7 @@
         const sec = (+doneSliderEl.value || 0) * 60;
         if (b.startedAt) stopBlock(b);          // stop any running timer before settling
         b.done = true;
+        b.alarmed = false;
         b.usedSec = sec;
         save();
         closeDoneModal();
