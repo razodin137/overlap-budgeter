@@ -193,39 +193,39 @@
         return denom > 0 ? pool * (b.percent || 0) / denom : 0;
     }
 
-    /* ── "Start from NOW" reflow.
-       Fixed/time blocks are NOT taken into account. The reflow pool is the wall-clock
-       time from now → bed, minus ALL currently-tracked (spent) time across every block.
-       That pool is split across the non-done percent categories in proportion to their
-       percent, so the remainder of the day fills now→bed with the flexible allocations
-       only. Done percent blocks are settled (excluded — their used time is already in
-       the spent total). Returns { allocs: id→sec, remainingSec(pool), totalSpentSec, dropped }. ── */
-    function computeNowAllocations(remainingHours) {
-        const { bed } = dayBoundsMin();
-        const wallLeftSec = Math.max(0, (bed - nowMin()) * 60);   // wall-clock now → bed
-        const all = [...state.fixed, ...state.percent];
-        const totalSpentSec = all.reduce((s, b) => s + spentSec(b), 0);
-        const pool = Math.max(0, wallLeftSec - totalSpentSec);   // left after all tracked time
-        const recipients = state.percent.filter(b => !b.done);
-        const denom = recipients.reduce((s, b) => s + (b.percent || 0), 0);
-        const allocs = {};
-        state.percent.forEach(b => {
-            allocs[b.id] = (!b.done && denom > 0) ? pool * (b.percent || 0) / denom : 0;
-        });
-        return { allocs, remainingSec: pool, totalSpentSec, dropped: [] };
+    /* ── The period the percent categories split — the only thing that differs
+       between modes. Plan: wake→bed minus fixed blocks. NOW: now→bed minus the
+       fixed blocks still ahead. Done/past fixed blocks already left the wall-clock
+       window, so they don't reduce the time that's left (subtracting them would
+       double-count). This is the same % × period math in both modes; the budget
+       it produces is stable — it does NOT shrink as a stopwatch spends time. ── */
+    function remainingHours() {
+        const bank = bankHours();
+        const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
+        return Math.max(0, bank - totalFixed);
+    }
+    function nowRemainingHours() {
+        const wallLeftH = Math.max(0, (dayBoundsMin().bed - nowMin()) / 60);   // now → bed
+        const fixedAheadH = state.fixed.reduce((s, b) => s + (b.done ? 0 : plannedSec(b) / 3600), 0);
+        return Math.max(0, wallLeftH - fixedAheadH);
+    }
+    function periodHours() { return state.nowMode ? nowRemainingHours() : remainingHours(); }
+
+    /* Snapshot of the NOW period + total spent, for the timeline caption. Per-block
+       budgets come from rowBudget/budgetSecPercent; this just feeds the readouts. */
+    function computeNowAllocations() {
+        const totalSpentSec = [...state.fixed, ...state.percent].reduce((s, b) => s + spentSec(b), 0);
+        return { remainingSec: Math.max(0, nowRemainingHours() * 3600), totalSpentSec, dropped: [] };
     }
 
     /* Shared budget/elapsed pair for a row, zen card, results row, and segment.
-       NOW mode swaps in the resplit slice, but the spent counter keeps counting
-       up from zero — the total time actually spent stays consistent between modes. */
-    function rowBudget(b, isPercent, remainingHours) {
-        if (state.nowMode && liveAllocs && isPercent) {
-            // NOW reflow applies to percent blocks only; fixed blocks fall through to
-            // their plan budget (NOW doesn't take time blocks into account).
-            return { budget: liveAllocs.allocs[b.id] || 0, secAgainst: spentSec(b) };
-        }
+       Budget = percent × period (the mode picks the period). secAgainst is the
+       stopwatch's elapsed — it counts up from zero the same way in both modes, so
+       switching Plan ↔ Start-from-NOW never resets the spent counter; it only
+       changes the budget that counter is compared against. */
+    function rowBudget(b, isPercent) {
         return {
-            budget: isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b),
+            budget: isPercent ? budgetSecPercent(b, periodHours()) : budgetSecFixed(b),
             secAgainst: spentSec(b),
         };
     }
@@ -571,7 +571,7 @@
         const runMode = state.mode === 'run';
 
         // NOW mode → resplit slice + running elapsed; else plan target + full elapsed.
-        const { budget, secAgainst } = rowBudget(b, isPercent, remainingHours);
+        const { budget, secAgainst } = rowBudget(b, isPercent);
 
         // Big display: stopwatch counts up from zero.
         e.timerElapsed.textContent = formatDigitalTime(sec);
@@ -685,9 +685,12 @@
         };
 
         if (state.nowMode && liveAllocs) {
-            // NOW mode: reflow slices of now→bed, percent only (fixed blocks excluded).
+            // NOW mode: percent slices of (now→bed − fixed-ahead), from NOW forward.
+            // Fixed blocks aren't drawn here (their ahead-time is already carved out of
+            // the pool); clear any stale plan-mode geometry so they don't linger on the bar.
+            state.fixed.forEach(b => { const seg = segEls[b.id]; if (seg) seg.style.width = '0%'; });
             state.percent.forEach(b => {
-                const { budget, secAgainst } = rowBudget(b, true, remaining);
+                const { budget, secAgainst } = rowBudget(b, true);
                 const w = dayLenSec > 0 ? budget / dayLenSec * 100 : 0;
                 placeSeg(b, cursor, w, budget, secAgainst);
                 const seg = segEls[b.id];
@@ -837,7 +840,7 @@
         state.fixed.forEach(b => {
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
-            const { budget, secAgainst } = rowBudget(b, false, remaining);
+            const { budget, secAgainst } = rowBudget(b, false);
             item.querySelector('span:first-child').textContent = `${b.name} (Fixed${b.done ? ' · done' : ''})`;
             item.querySelector('.budget-val').textContent = `${b.done ? 'Taken' : 'Budget'} ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
@@ -847,7 +850,7 @@
         state.percent.forEach(b => {
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
-            const { budget, secAgainst } = rowBudget(b, true, remaining);
+            const { budget, secAgainst } = rowBudget(b, true);
             item.querySelector('span:first-child').textContent = `${b.name} (${b.percent}%${b.done ? ' · done' : ''})`;
             item.querySelector('.budget-val').textContent = `${b.done ? 'Used' : 'Budget'} ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
@@ -855,7 +858,8 @@
             tv.style.color = displayColor(b, budget, secAgainst);
         });
         const freeRow = list.querySelector('.free-row');
-        const freeH = Math.max(0, remaining - remaining * Math.min(totalPercent, 100) / 100);
+        const period = periodHours();
+        const freeH = Math.max(0, period - period * Math.min(totalPercent, 100) / 100);
         if (freeRow) {
             freeRow.style.display = freeH > 0 ? '' : 'none';
             freeRow.querySelector('.time-val').textContent = formatHumanTime(freeH * 3600);
@@ -863,9 +867,9 @@
     }
 
     function updateLive() {
-        // Compute the resplit BEFORE recalc: recalc's NOW-mode timeline branch reads
+        // Compute the NOW snapshot BEFORE recalc: recalc's NOW-mode caption reads
         // liveAllocs, so it must be fresh, not one tick stale.
-        liveAllocs = computeNowAllocations(remainingHours());
+        liveAllocs = computeNowAllocations();
         const { remaining } = recalc();
         state.fixed.forEach(b => updateRow(b, false, remaining));
         state.percent.forEach(b => updateRow(b, true, remaining));
@@ -961,11 +965,6 @@
     // State is ephemeral (not persisted) — a fresh page starts closed.
     let zenOpen = false;
 
-    function remainingHours() {
-        const bank = bankHours();
-        const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
-        return Math.max(0, bank - totalFixed);
-    }
     function runningBlocks() {
         return [...state.fixed, ...state.percent].filter(b => b.startedAt);
     }
@@ -992,7 +991,7 @@
 
         const isPercent = state.percent.includes(b);
         const remaining = remainingHours();
-        const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
+        const { budget, secAgainst } = rowBudget(b, isPercent);
         const card = document.createElement('div');
         card.className = 'zen-card';
         card.style.borderTopColor = b.color;
@@ -1081,7 +1080,7 @@
             doneValEl = document.getElementById('doneVal');
         }
         document.getElementById('doneTitle').textContent = `Mark “${b.name}” done`;
-        const budgetMin = Math.floor(budgetSecPercent(b, remainingHours()) / 60);
+        const budgetMin = Math.floor(budgetSecPercent(b, periodHours()) / 60);
         const elapsedMin = Math.floor(elapsedOf(b) / 60);
         const maxMin = Math.max(budgetMin, elapsedMin, 0);
         doneSliderEl.min = 0; doneSliderEl.max = maxMin; doneSliderEl.step = 1;
