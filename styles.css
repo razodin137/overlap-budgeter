@@ -277,17 +277,15 @@
             border: 1px solid #333;
             border-radius: 8px;
         }
-        /* Layers inside the bar. Each is absolute inset:0 and clips its children to
-           the rounded bar; the NOW line is a sibling with overflow visible so its
-           dot/label can sit just outside the bar. */
-        .tl-past, .tl-segs, .tl-blobs {
+        /* Layers inside the bar. The segs layer is absolute inset:0 and clips its
+           children to the rounded bar; the NOW line is a sibling with overflow
+           visible so its dot/label can sit just outside the bar. */
+        .tl-segs {
             position: absolute; inset: 0;
             overflow: hidden;
             border-radius: 7px;
+            z-index: 2;
         }
-        .tl-past { background: #111; width: 0; transition: width 0.4s ease; z-index: 1; }
-        .tl-segs { z-index: 2; }
-        .tl-blobs { z-index: 3; pointer-events: none; }
         .segment {
             position: absolute;
             top: 0; bottom: 0;
@@ -297,27 +295,6 @@
         }
         .segment.free {
             background: repeating-linear-gradient(45deg, #2a2a2a, #2a2a2a 4px, #232323 4px, #232323 8px) !important;
-        }
-        /* The bright bar inside a segment that "fills up" as time is spent against
-           the budget — same look as the per-row progress pills. */
-        .segment-fill {
-            position: absolute;
-            left: 0; top: 0; bottom: 0;
-            width: 0;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
-            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease;
-            pointer-events: none;
-            /* background-image (stripe density) set inline per tick — not transitioned. */
-        }
-        /* Spent-time blobs: a block's identity color, dimmed to read as history. */
-        .spent-blob {
-            position: absolute;
-            top: 7px; bottom: 7px;
-            min-width: 2px;
-            border-radius: 4px;
-            opacity: 0.4;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-            transition: left 0.3s linear, width 0.3s linear;
         }
         /* NOW marker: a vertical line + pulsing dot + label. It paints itself in the
            color of the running stopwatch (--now-color, set inline on #tlNow);
@@ -363,22 +340,22 @@
             0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--now-color, var(--success)) 60%, transparent); transform: translateX(-50%) scale(1); }
             50%      { box-shadow: 0 0 12px var(--now-color, var(--success));  transform: translateX(-50%) scale(1.25); }
         }
-        /* Hour ticks beneath the bar */
-        .tl-ticks {
+        /* START / END markers beneath the bar (NOW's label sits above the bar). */
+        .tl-markers {
             position: relative;
             height: 18px;
             margin-top: 6px;
             width: 100%;
         }
-        .tl-tick {
+        .tl-marker {
             position: absolute;
             top: 0;
-            transform: translateX(-50%);
             font-size: 0.58rem;
             color: var(--text-dim);
             white-space: nowrap;
         }
-        .tl-tick-end { transform: translateX(-100%); }
+        .tl-marker-start { left: 0; transform: none; }
+        .tl-marker-end { right: 0; transform: none; }
 
         .results-list { margin-top: 16px; }
         .result-item {
@@ -672,7 +649,7 @@
             .category-row.alarm { animation: none; }
             .tl-now-dot { animation: none; }
             .progress-fill { transition: width 0.3s linear !important; }
-            .segment, .tl-now, .spent-blob { transition: width 0.3s linear, left 0.3s linear !important; }
+            .segment, .tl-now { transition: width 0.3s linear, left 0.3s linear !important; }
         }
 
         /* ── Timeline as the Day Window header (tap to edit wake/bed) ── */

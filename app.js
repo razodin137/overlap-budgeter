@@ -75,7 +75,6 @@
     // Stable element refs so we never rebuild inputs mid-typing.
     const rowEls = {};   // id -> { row, timer, timerElapsed, timerBudget, btn, progress, progressFill }
     const segEls = {};   // id -> segment div
-    const blobEls = {};  // `${id}:${idx}` -> spent-blob div
     let freeSeg = null;
 
     // --- Persistence ---
@@ -449,12 +448,9 @@
     function renderStructure() {
         const pC = document.getElementById('percentContainer');
         const tlSegs = document.getElementById('tlSegs');
-        const tlBlobs = document.getElementById('tlBlobs');
-        const tlTicks = document.getElementById('tlTicks');
-        pC.innerHTML = ''; tlSegs.innerHTML = ''; tlBlobs.innerHTML = '';
+        pC.innerHTML = ''; tlSegs.innerHTML = '';
         for (const k in rowEls) delete rowEls[k];
         for (const k in segEls) delete segEls[k];
-        for (const k in blobEls) delete blobEls[k];
 
         const attach = (container) => {
             state.percent.forEach(b => {
@@ -472,12 +468,8 @@
                 };
                 const seg = document.createElement('div');
                 seg.className = 'segment';
-                const fill = document.createElement('div');
-                fill.className = 'segment-fill';
-                seg.appendChild(fill);
                 tlSegs.appendChild(seg);
                 segEls[b.id] = seg;
-                seg._fill = fill;   // cached on the seg, reuses segEls
             });
         };
         attach(pC);
@@ -487,34 +479,7 @@
         freeSeg.style.borderBottom = '2px solid transparent';
         tlSegs.appendChild(freeSeg);
 
-        renderTicks(tlTicks);
         updateLive();
-    }
-
-    /* Hour ticks under the bar: wake, bed, and a label every ~2h in between. */
-    function renderTicks(tlTicks) {
-        tlTicks.innerHTML = '';
-        const { wake, bed, len } = dayBoundsMin();
-        const step = len > 6 * 60 ? 120 : 60;   // ~2h labels for long days, 1h for short
-        const fmt = m => {
-            const h24 = Math.floor(m / 60) % 24, m60 = m % 60;
-            const ampm = h24 < 12 ? 'a' : 'p';
-            const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-            return h12 + (m60 === 0 ? '' : ':' + String(m60).padStart(2, '0')) + ampm;
-        };
-        for (let m = wake; m <= bed; m += step) {
-            const t = document.createElement('div');
-            t.className = 'tl-tick';
-            t.style.left = ((m - wake) / len * 100) + '%';
-            t.textContent = fmt(m);
-            tlTicks.appendChild(t);
-        }
-        // Always label bed exactly.
-        const end = document.createElement('div');
-        end.className = 'tl-tick tl-tick-end';
-        end.style.left = '100%';
-        end.textContent = fmt(bed % 1440);
-        tlTicks.appendChild(end);
     }
 
     function updateRow(b) {
@@ -599,26 +564,18 @@
         const npct = nowPctOfDay();
         let cursor = 0;
 
-        // Stripes + a growing fill both encode used/budget. The segment is the dim
-        // track (the budget span); the .segment-fill child is the bright bar that
-        // "fills up" as time is spent — the same look the per-row pills use.
-        const placeSeg = (b, leftPct, widthPct, budgetSec, secAgainst) => {
+        // Each segment is a plain colored allocation slice: its width is the
+        // block's % of the wake→bed bank (the plan). No spent-time fill on the
+        // timeline — tracking is deferred; the per-row pills carry that.
+        const placeSeg = (b, leftPct, widthPct) => {
             const seg = segEls[b.id];
             if (!seg) return;
             const w = Math.max(0, widthPct);
             seg.style.left = leftPct + '%';
             seg.style.width = w + '%';
-            seg.style.backgroundColor = fade(b.color);   // dim track
+            seg.style.backgroundColor = b.color;   // the slice IS the plan color
             seg.classList.toggle('done', !!b.done);
-            seg.style.borderBottom = '2px solid ' + displayColor(b, budgetSec, secAgainst);
-            const fillPct = budgetSec > 0 ? Math.min(100, (secAgainst / budgetSec) * 100)
-                                          : (secAgainst > 0 ? 100 : 0);
-            const fill = seg._fill;
-            if (fill) {
-                fill.style.width = fillPct + '%';
-                fill.style.backgroundColor = displayColor(b, budgetSec, secAgainst);
-                applyStripes(fill, budgetSec, secAgainst);
-            }
+            seg.style.borderBottom = '2px solid ' + (b.done ? '#06d6a0' : b.color);
             cursor = Math.max(cursor, leftPct + w);
         };
 
@@ -626,9 +583,9 @@
         state.percent.forEach(b => {
             const bsec = budgetSecPercent(b);
             const w = dayLenH > 0 ? (b.percent / 100) * 100 : 0;   // bank == dayLen now
-            placeSeg(b, cursor, w, bsec, elapsedOf(b));
+            placeSeg(b, cursor, w);
             const seg = segEls[b.id];
-            if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of bank) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+            if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of bank)';
         });
 
         // Free / unallocated slack fills whatever's left.
@@ -638,8 +595,9 @@
         const freeHours = (freePct / 100) * dayLenH;
         freeSeg.title = 'Free / unallocated: ' + formatHumanTime(freeHours * 3600);
 
-        // NOW line + dim past track. The NOW marker paints itself in the color of the
-        // single running stopwatch; green when nothing is running.
+        // NOW marker: a vertical line that paints itself in the color of the single
+        // running stopwatch; green when nothing is running. It sits at nowPctOfDay(),
+        // which clamps to 0% before wake (the "start from now" case) and 100% after bed.
         const nowLine = document.getElementById('tlNow');
         if (nowLine) {
             nowLine.style.left = npct + '%';
@@ -653,10 +611,13 @@
             if (running.length) nowLine.style.setProperty('--now-color', running[0].color);
             else nowLine.style.removeProperty('--now-color');
         }
-        const tlPast = document.getElementById('tlPast');
-        if (tlPast) tlPast.style.width = npct + '%';
 
-        renderBlobs(npct);
+        // START / END markers anchor the bar's wake and bed times. NOW's label sits
+        // above the bar; these sit below it, so they never collide even at the edges.
+        const sl = document.getElementById('tlStartLabel');
+        if (sl) sl.textContent = 'START ' + formatClock(timeToMin(state.wake));
+        const el = document.getElementById('tlEndLabel');
+        if (el) el.textContent = 'END ' + formatClock(timeToMin(state.bed));
 
         // Caption: plan summary — time in the bank to split, plus slack.
         const caption = document.getElementById('vizCaption');
@@ -668,46 +629,6 @@
         return { bank, totalPercent };
     }
 
-    /* Spent blobs: one per logged interval (finished + the live running one),
-       clamped to today's [wake, now] window, positioned by wall-clock time. */
-    function renderBlobs(npct) {
-        const tlBlobs = document.getElementById('tlBlobs');
-        if (!tlBlobs) return;
-        const { startMs, lenMs } = dayWindowMs();
-        const now = nowMs();
-        const seen = new Set();
-        state.percent.forEach(b => {
-            const ivs = (Array.isArray(b.intervals) ? b.intervals : []).slice();
-            if (b.startedAt) ivs.push({ s: b.startedAt, e: now });   // live running interval
-            ivs.forEach((iv, i) => {
-                let s = Math.max(iv.s, startMs);
-                let e = Math.min(iv.e, now);          // blobs only in the past
-                if (e <= s) return;                   // entirely outside window / future
-                const key = b.id + ':' + i;
-                seen.add(key);
-                let el = blobEls[key];
-                if (!el) {
-                    el = document.createElement('div');
-                    el.className = 'spent-blob';
-                    el.style.backgroundColor = b.color;
-                    tlBlobs.appendChild(el);
-                    blobEls[key] = el;
-                }
-                el.style.left = ((s - startMs) / lenMs * 100) + '%';
-                el.style.width = Math.max(0.5, (e - s) / lenMs * 100) + '%';
-            });
-        });
-        // Drop blobs for intervals that no longer exist (block removed / day reset).
-        for (const key in blobEls) {
-            if (!seen.has(key)) { blobEls[key].remove(); delete blobEls[key]; }
-        }
-    }
-
-    function dayWindowMs() {
-        const { wake, len } = dayBoundsMin();
-        const d = new Date(nowMs()); d.setHours(0, 0, 0, 0);
-        return { startMs: d.getTime() + wake * 60000, lenMs: len * 60000 };
-    }
     function formatClock(minSinceMidnight) {
         const m = ((minSinceMidnight % 1440) + 1440) % 1440;
         const h24 = Math.floor(m / 60), m60 = m % 60;
@@ -867,7 +788,6 @@
         zenOpen = false;
         updateZenVisibility();
         save();
-        renderTicks(document.getElementById('tlTicks'));
         closeStartNowModal();
         renderStructure();
     }
@@ -1176,7 +1096,6 @@
             state.wake = pad2(wH) + ':' + pad2(wM);
             state.bed  = pad2(bH) + ':' + pad2(bM);
             save();
-            renderTicks(document.getElementById('tlTicks'));
             updateLive();
             dayLenEl.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';
         };

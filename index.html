@@ -18,15 +18,17 @@
         </div>
     </div>
 
-    <!-- Day window, shown as the wake→bed timeline with NOW. Tap to edit wake/bed. -->
+    <!-- Day window: three markers (START / NOW / END) over the wake→bed bar, split
+         into colored slices per stopwatch. Tap to edit wake/bed. -->
     <div class="timeline" id="visualizer" role="button" tabindex="0" aria-label="Edit day window" title="Tap to edit wake / bed times">
         <div class="tl-bar">
-            <div class="tl-past" id="tlPast"></div>
             <div class="tl-segs" id="tlSegs"></div>
-            <div class="tl-blobs" id="tlBlobs"></div>
             <div class="tl-now" id="tlNow"><span class="tl-now-dot"></span><span class="tl-now-label" id="tlNowLabel">NOW</span></div>
         </div>
-        <div class="tl-ticks" id="tlTicks"></div>
+        <div class="tl-markers" id="tlMarkers">
+            <span class="tl-marker tl-marker-start" id="tlStartLabel">START</span>
+            <span class="tl-marker tl-marker-end" id="tlEndLabel">END</span>
+        </div>
     </div>
     <div id="vizCaption" class="viz-caption"></div>
 
