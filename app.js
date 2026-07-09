@@ -21,20 +21,32 @@
     function dayLengthHours() { return dayBoundsMin().len / 60; }
     // The bank IS the wake→bed window now (replaces the old manual total-bank input).
     function bankHours() { return dayLengthHours(); }
+    // The real current wall-clock, in minutes since midnight (0–1439). Unclamped — this
+    // is the actual time of day, used for the NOW label and to anchor "Start day now".
+    // (The timeline marker clamps to the bar separately in nowPctOfDay.) Previously
+    // this clamped/wrapped the real time into the wake→bed window, which made the app
+    // report a window edge (e.g. bed) instead of the real time and pinned "Start day
+    // now" to that stale edge — the long-standing "thinks it's 7:30pm" bug.
     function nowMin() {
         const d = new Date(nowMs());
-        const n = d.getHours() * 60 + d.getMinutes();
-        const { wake, bed, len } = dayBoundsMin();   // bed already +1440 if wrapped
-        // Position the current wall-clock on the day's linear wake→bed axis.
-        let pos = n - wake;
-        if (pos < 0) pos += 1440;       // past midnight into a wrapped day
-        if (pos <= 0) return wake;
-        if (pos >= len) return bed;
-        return wake + pos;
+        return d.getHours() * 60 + d.getMinutes();
     }
+    // Position the current wall-clock on the wake→bed axis as a 0–100% bar position.
+    // Handles a day that wraps past midnight, and clamps to the bar when "now" falls
+    // outside the window. Crucially it only wraps when the day actually crosses
+    // midnight — a non-wrapping day with "now" before wake clamps to the start, not
+    // the end.
     function nowPctOfDay() {
-        const { wake, len } = dayBoundsMin();
-        return len > 0 ? Math.max(0, Math.min(100, (nowMin() - wake) / len * 100)) : 0;
+        const { wake, bed, len } = dayBoundsMin();   // bed already +1440 if wrapped
+        if (len <= 0) return 0;
+        const n = nowMin();
+        const wraps = bed > 1440;                    // the day crosses midnight
+        const bedMod = bed % 1440;                   // bed as a clock time
+        let pos;
+        if (n >= wake) pos = n - wake;              // same-day portion
+        else if (wraps && n <= bedMod) pos = n + 1440 - wake;   // post-midnight portion (incl. the bed endpoint)
+        else pos = -1;                              // gap before the next wake → clamp to the start
+        return Math.max(0, Math.min(100, pos / len * 100));
     }
 
     /* ── One fixed color set. Each row gets its own color by index, in creation order. ── */
