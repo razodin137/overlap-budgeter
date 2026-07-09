@@ -53,7 +53,6 @@
         multitask: false,
         mode: 'run',      // the app now lives in the run view; editing is per-category via hold-to-edit
         nowMode: false,    // "Start from NOW" reflow active?
-        nowBaseline: {},   // id → elapsedOf(b) snapshot (seconds) at the moment nowMode engaged
         fixed: [],
         percent: [],
     };
@@ -85,7 +84,6 @@
                     multitask: !!s.multitask,
                     mode: 'run',
                     nowMode: !!s.nowMode,
-                    nowBaseline: (s.nowBaseline && typeof s.nowBaseline === 'object') ? s.nowBaseline : {},
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
                     percent: Array.isArray(s.percent) ? s.percent.map(norm) : [],
                 };
@@ -132,6 +130,11 @@
     // --- Timing (timestamp-based: survives reload, background throttling, sleep) ---
     function elapsedOf(b) {
         return b.banked + (b.startedAt ? Math.floor((nowMs() - b.startedAt) / 1000) : 0);
+    }
+    // Time actually charged against a block's budget: the running elapsed total, except
+    // for done percent categories, which settle on the amount the user declared.
+    function spentSec(b) {
+        return (state.percent.some(x => x.id === b.id) && b.done) ? (b.usedSec || 0) : elapsedOf(b);
     }
     function startBlock(b) {
         if (b.startedAt) return;
@@ -204,7 +207,7 @@
         const { bed } = dayBoundsMin();
         const wallLeftSec = Math.max(0, (bed - nowMin()) * 60);   // wall-clock now → bed
         const all = [...state.fixed, ...state.percent];
-        const totalSpentSec = all.reduce((s, b) => s + elapsedOf(b), 0);
+        const totalSpentSec = all.reduce((s, b) => s + spentSec(b), 0);
         const pool = Math.max(0, wallLeftSec - totalSpentSec);   // left after all tracked time
         const recipients = state.percent.filter(b => !b.done);
         const denom = recipients.reduce((s, b) => s + (b.percent || 0), 0);
@@ -216,19 +219,17 @@
     }
 
     /* Shared budget/elapsed pair for a row, zen card, results row, and segment.
-       NOW mode swaps in the resplit slice and counts only time spent since NOW
-       was engaged; otherwise the plan target and full elapsed. */
+       NOW mode swaps in the resplit slice, but the spent counter keeps counting
+       up from zero — the total time actually spent stays consistent between modes. */
     function rowBudget(b, isPercent, remainingHours) {
         if (state.nowMode && liveAllocs && isPercent) {
             // NOW reflow applies to percent blocks only; fixed blocks fall through to
             // their plan budget (NOW doesn't take time blocks into account).
-            const budget = liveAllocs.allocs[b.id] || 0;
-            const baseline = state.nowBaseline[b.id] || 0;
-            return { budget, secAgainst: Math.max(0, elapsedOf(b) - baseline) };
+            return { budget: liveAllocs.allocs[b.id] || 0, secAgainst: spentSec(b) };
         }
         return {
             budget: isPercent ? budgetSecPercent(b, remainingHours) : budgetSecFixed(b),
-            secAgainst: (isPercent && b.done) ? (b.usedSec || 0) : elapsedOf(b),
+            secAgainst: spentSec(b),
         };
     }
 
@@ -299,7 +300,6 @@
         const block = list[idx];
         stopBlock(block);            // bank whatever was running so undo preserves it
         list.splice(idx, 1);
-        delete state.nowBaseline[block.id];
         save(); renderStructure();
         showUndo(listKey, idx, block);
     }
@@ -567,7 +567,7 @@
         const running = !!b.startedAt;
         const runMode = state.mode === 'run';
 
-        // NOW mode → resplit slice + time-since-NOW; else plan target + full elapsed.
+        // NOW mode → resplit slice + running elapsed; else plan target + full elapsed.
         const { budget, secAgainst } = rowBudget(b, isPercent, remainingHours);
 
         // Big display: elapsed in edit mode, remaining in run mode
@@ -689,7 +689,7 @@
                 const w = dayLenSec > 0 ? budget / dayLenSec * 100 : 0;
                 placeSeg(b, cursor, w, budget, secAgainst);
                 const seg = segEls[b.id];
-                if (seg) seg.title = b.name + ' · NOW ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' since NOW';
+                if (seg) seg.title = b.name + ' · NOW ' + formatHumanTime(budget) + ' · ' + formatHumanTime(secAgainst) + ' actual';
             });
         } else {
             // Plan mode: fixed blocks at their start time (or from the cursor), then
@@ -887,7 +887,6 @@
         // reflow starts clean. (Fixed `done` is left as-is — pre-existing behavior.)
         state.percent.forEach(b => { b.done = false; b.usedSec = 0; });
         state.nowMode = false;
-        state.nowBaseline = {};
         zenOpen = false;        // a fresh day starts with zen closed; a solo start reopens it
         updateZenVisibility();
         save();
@@ -938,8 +937,9 @@
     }
 
     // --- Start from NOW: reflow the remainder (now → bed) across budgets ---
-    // Engaging snapshots each block's elapsed so the "left" countdowns only count
-    // time spent *after* this moment. Disengaging returns to the full-day plan.
+    // Engaging resplits the flexible pool from the current wall-clock time forward.
+    // The total time actually spent keeps counting up, so switching modes never
+    // resets a block's spent counter — it only changes the budget it is compared to.
     function applyNowLabel() {
         const btn = document.getElementById('nowBtn');
         if (!btn) return;
@@ -950,13 +950,8 @@
     function toggleNow() {
         state.nowMode = !state.nowMode;
         if (state.nowMode) {
-            // Snapshot elapsed per block — the baseline "now" counts against from here.
-            [...state.fixed, ...state.percent].forEach(b => {
-                state.nowBaseline[b.id] = elapsedOf(b);
-                b.alarmed = false;   // re-arm alarms against the new resplit budgets
-            });
-        } else {
-            state.nowBaseline = {};
+            // Re-arm alarms against the new resplit budgets.
+            [...state.fixed, ...state.percent].forEach(b => { b.alarmed = false; });
         }
         applyNowLabel();
         save(); updateLive();
