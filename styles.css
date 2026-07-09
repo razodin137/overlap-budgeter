@@ -322,7 +322,7 @@
             transition: left 0.3s linear, width 0.3s linear;
         }
         /* NOW marker: a vertical line + pulsing dot + label. It paints itself in the
-           color of the currently-running timer (--now-color, set inline on #tlNow);
+           color of the running stopwatch (--now-color, set inline on #tlNow);
            green when nothing is running. color-mix derives the translucent glows. */
         .tl-now {
             position: absolute;

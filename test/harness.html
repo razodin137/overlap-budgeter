@@ -150,6 +150,34 @@
       // restore category so repeated runs are stable
       pct.banked = pctOrig.banked; pct.startedAt = pctOrig.startedAt; pct.done = pctOrig.done; pct.usedSec = pctOrig.usedSec;
       save();
+
+      // 10. Only one stopwatch may run at a time.
+      var f0 = state.fixed[0], f1 = state.fixed[1];
+      var f0Orig = { banked: f0.banked, startedAt: f0.startedAt },
+          f1Orig = { banked: f1.banked, startedAt: f1.startedAt };
+      f0.banked = 0; f0.startedAt = null; f1.banked = 0; f1.startedAt = null;
+      W.eval("toggleBlock('fixed', state.fixed[0].id)");
+      var afterFirst = W.eval('runningBlocks().length');
+      assert('starting first fixed timer runs one stopwatch', afterFirst === 1, 'got ' + afterFirst);
+      W.eval("toggleBlock('fixed', state.fixed[1].id)");
+      var afterSecond = W.eval('runningBlocks().length');
+      assert('starting second timer stops the first', afterSecond === 1, 'got ' + afterSecond);
+      assert('first timer is banked when second starts', state.fixed[0].startedAt === null, 'still running');
+      // stop the remaining timer and restore
+      W.eval("toggleBlock('fixed', state.fixed[1].id)");
+      f0.banked = f0Orig.banked; f0.startedAt = f0Orig.startedAt;
+      f1.banked = f1Orig.banked; f1.startedAt = f1Orig.startedAt;
+      save();
+
+      // 11. Big readout counts up (stopwatch), not down from budget.
+      var f = state.fixed[0];
+      var fOrig2 = { banked: f.banked, startedAt: f.startedAt, hours: f.hours };
+      f.banked = 60; f.startedAt = nowMs() - 120 * 1000; f.hours = 0.5;   // 3 min elapsed, 30 min budget
+      updateLive();
+      var big = D.querySelector('.category-row[data-id="' + f.id + '"] .td-elapsed').textContent;
+      assert('big display counts up elapsed time', /3/.test(big) && !/27/.test(big), 'display="' + big + '"');
+      f.banked = fOrig2.banked; f.startedAt = fOrig2.startedAt; f.hours = fOrig2.hours;
+      save();
     } catch (e) {
       failed++;
       results.textContent += 'EXC  ' + (e.message || e) + '\n' + (e.stack || '') + '\n';

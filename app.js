@@ -50,7 +50,6 @@
     let state = {
         wake: DEFAULT_WAKE,
         bed: DEFAULT_BED,
-        multitask: false,
         mode: 'run',      // the app now lives in the run view; editing is per-category via hold-to-edit
         nowMode: false,    // "Start from NOW" reflow active?
         fixed: [],
@@ -81,7 +80,6 @@
                 state = {
                     wake: typeof s.wake === 'string' ? s.wake : DEFAULT_WAKE,
                     bed: typeof s.bed === 'string' ? s.bed : DEFAULT_BED,
-                    multitask: !!s.multitask,
                     mode: 'run',
                     nowMode: !!s.nowMode,
                     fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
@@ -138,16 +136,15 @@
     }
     function startBlock(b) {
         if (b.startedAt) return;
-        if (!state.multitask) {
-            [...state.fixed, ...state.percent].forEach(o => {
-                if (o !== b && o.startedAt) stopBlock(o);
-            });
-        }
+        // Only one stopwatch runs at a time: stop any other active block first.
+        [...state.fixed, ...state.percent].forEach(o => {
+            if (o !== b && o.startedAt) stopBlock(o);
+        });
         b.startedAt = nowMs();
         b.alarmed = false;       // re-arm the alarm when a fresh run begins
         b.done = false;          // resuming a finished block un-finishes it (re-reserves its plan)
-        // Solo starts auto-open the zen overlay; overlapping starts do not.
-        if (!state.multitask) { zenOpen = true; updateZenVisibility(); }
+        zenOpen = true;          // starting a timer auto-opens the zen overlay
+        updateZenVisibility();
     }
     // DONE: stop the timer (banking what was spent) and release any leftover planned
     // time back to the percent splits. Toggling again undoes it (re-reserves the plan).
@@ -383,7 +380,11 @@
 
         const btn = document.createElement('button');
         btn.className = 'btn-timer';
-        btn.addEventListener('click', () => toggleBlock(listKey, b.id));
+        btn.type = 'button';
+        btn.tabIndex = -1;
+        // Stop the row's press handlers from also firing on this button; use click to toggle.
+        btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        btn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); toggleBlock(listKey, b.id); });
 
         // DONE button for every block. Fixed: toggles done (releases leftover planned
         // time to the percent splits). Percent: opens a slider to declare time used, then
@@ -404,6 +405,7 @@
 
         const rm = document.createElement('button');
         rm.className = 'btn-remove'; rm.textContent = '×';
+        rm.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
         rm.addEventListener('click', () => removeBlock(listKey, b.id));
 
         // Mobile edit-mode only: a chevron that expands the row to reveal the
@@ -412,6 +414,7 @@
         const chev = document.createElement('button');
         chev.className = 'chevron';
         chev.type = 'button';
+        chev.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
         chev.setAttribute('aria-label', 'Expand category fields');
         chev.setAttribute('aria-expanded', 'false');
         chev.textContent = '▾';
@@ -443,7 +446,7 @@
         let holdTimer = null, cueTimer = null, held = false, moved = false, sx = 0, sy = 0;
         const clearHold = () => { clearTimeout(holdTimer); clearTimeout(cueTimer); holdTimer = null; cueTimer = null; row.classList.remove('holding'); };
         row.addEventListener('pointerdown', (e) => {
-            if (e.target.closest('.btn-done')) return;     // Done handles itself
+            if (e.target.closest('button')) return;         // let buttons handle themselves
             held = false; moved = false;
             sx = e.clientX; sy = e.clientY;
             cueTimer = setTimeout(() => { row.classList.add('holding'); }, 150);   // tactile-ish cue that the hold is registering
@@ -570,9 +573,8 @@
         // NOW mode → resplit slice + running elapsed; else plan target + full elapsed.
         const { budget, secAgainst } = rowBudget(b, isPercent, remainingHours);
 
-        // Big display: elapsed in edit mode, remaining in run mode
-        const shown = runMode ? Math.max(0, budget - secAgainst) : sec;
-        e.timerElapsed.textContent = formatDigitalTime(shown);
+        // Big display: stopwatch counts up from zero.
+        e.timerElapsed.textContent = formatDigitalTime(sec);
         const done = !!b.done;
         e.timerBudget.textContent = runMode
             ? (done ? 'done · ' + formatCompact(secAgainst)
@@ -719,8 +721,7 @@
         freeSeg.title = 'Free / unallocated: ' + formatHumanTime(freeHours * 3600);
 
         // NOW line + dim past track (past track shown only in NOW mode). The NOW
-        // marker paints itself in the color of whatever timer is currently running
-        // (most-recently-started wins in multitask); green when nothing is running.
+        // marker paints itself in the color of the single running stopwatch; green when nothing is running.
         const nowLine = document.getElementById('tlNow');
         if (nowLine) {
             nowLine.style.left = npct + '%';
@@ -731,10 +732,7 @@
                 lbl.classList.toggle('edge-right', npct > 92);
             }
             const running = runningBlocks();
-            let nowColor = null;
-            if (running.length === 1) nowColor = running[0].color;
-            else if (running.length > 1) nowColor = running.reduce((a, b) => (b.startedAt > a.startedAt ? b : a)).color;
-            if (nowColor) nowLine.style.setProperty('--now-color', nowColor);
+            if (running.length) nowLine.style.setProperty('--now-color', running[0].color);
             else nowLine.style.removeProperty('--now-color');
         }
         const tlPast = document.getElementById('tlPast');
@@ -957,12 +955,11 @@
         save(); updateLive();
     }
 
-    // --- Zen mode: full-screen focus on whatever is running ---
-    // The Zen button is a simple open/close toggle. Solo starts auto-open the
+    // --- Zen mode: full-screen focus on the single running stopwatch ---
+    // The Zen button is a simple open/close toggle. Starting a timer auto-opens the
     // overlay; exiting (×, backdrop, Escape) closes it; the button reopens it.
     // State is ephemeral (not persisted) — a fresh page starts closed.
     let zenOpen = false;
-    let zenSig = '';              // set of running ids currently rendered (avoids per-tick churn)
 
     function remainingHours() {
         const bank = bankHours();
@@ -982,54 +979,41 @@
     function updateZen() {
         const content = document.getElementById('zenContent');
         const running = runningBlocks();
-        const sig = running.map(b => b.id).join(',');
-        const remaining = remainingHours();
-        const runMode = state.mode === 'run';
+        const b = running[0];
+        content.innerHTML = '';
 
-        // Rebuild structure only when the set of running timers changes.
-        if (sig !== zenSig) {
-            zenSig = sig;
-            content.innerHTML = '';
-            if (running.length === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'zen-empty';
-                empty.textContent = 'No timers running';
-                content.appendChild(empty);
-            } else {
-                running.forEach(b => {
-                    const card = document.createElement('div');
-                    card.className = 'zen-card';
-                    card.dataset.id = b.id;
-                    card.style.borderTopColor = b.color;
-                    card.innerHTML =
-                        '<div class="zen-name"></div>' +
-                        '<div class="zen-time"></div>' +
-                        '<div class="zen-sub"></div>' +
-                        '<div class="zen-progress"><div class="zen-progress-fill"></div></div>';
-                    content.appendChild(card);
-                });
-            }
+        if (!b) {
+            const empty = document.createElement('div');
+            empty.className = 'zen-empty';
+            empty.textContent = 'No stopwatch running';
+            content.appendChild(empty);
+            return;
         }
 
-        // Update text in place every tick (no DOM churn while timers run).
-        running.forEach(b => {
-            const isPercent = state.percent.includes(b);
-            const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
-            const card = content.querySelector(`.zen-card[data-id="${b.id}"]`);
-            if (!card) return;
-            const shown = runMode ? Math.max(0, budget - secAgainst) : secAgainst;
-            card.querySelector('.zen-name').textContent = b.name;
-            const time = card.querySelector('.zen-time');
-            time.textContent = formatDigitalTime(shown);
-            time.style.color = ratioColor(b.color, budget, secAgainst);
-            card.querySelector('.zen-sub').textContent = runMode ? (b.startedAt ? 'left' : '') : 'of ' + formatCompact(budget);
-            const pct = budget > 0 ? Math.min(100, (secAgainst / budget) * 100) : (secAgainst > 0 ? 100 : 0);
-            const fill = card.querySelector('.zen-progress-fill');
-            fill.style.width = pct + '%';
-            fill.style.backgroundColor = ratioColor(b.color, budget, secAgainst);
-            card.querySelector('.zen-progress').style.background = fade(b.color);
-            card.classList.toggle('alarm', !!b.alarmed);
-        });
+        const isPercent = state.percent.includes(b);
+        const remaining = remainingHours();
+        const { budget, secAgainst } = rowBudget(b, isPercent, remaining);
+        const card = document.createElement('div');
+        card.className = 'zen-card';
+        card.style.borderTopColor = b.color;
+        card.innerHTML =
+            '<div class="zen-name"></div>' +
+            '<div class="zen-time"></div>' +
+            '<div class="zen-sub"></div>' +
+            '<div class="zen-progress"><div class="zen-progress-fill"></div></div>';
+        content.appendChild(card);
+
+        card.querySelector('.zen-name').textContent = b.name;
+        const time = card.querySelector('.zen-time');
+        time.textContent = formatDigitalTime(secAgainst);
+        time.style.color = ratioColor(b.color, budget, secAgainst);
+        card.querySelector('.zen-sub').textContent = 'of ' + formatCompact(budget);
+        const pct = budget > 0 ? Math.min(100, (secAgainst / budget) * 100) : (secAgainst > 0 ? 100 : 0);
+        const fill = card.querySelector('.zen-progress-fill');
+        fill.style.width = pct + '%';
+        fill.style.backgroundColor = ratioColor(b.color, budget, secAgainst);
+        card.querySelector('.zen-progress').style.background = fade(b.color);
+        card.classList.toggle('alarm', !!b.alarmed);
     }
     // Zen button: toggle the overlay open/closed. Auto-pop is handled in startBlock.
     function toggleZen() {
@@ -1356,25 +1340,6 @@
         body.appendChild(dayLenEl);
         dayLenEl.textContent = formatHumanTime(dayLengthHours() * 3600) + ' to spend';   // readout only — don't mutate state until a wheel moves
 
-        // Multitask toggle
-        const mtWrap = document.createElement('div');
-        mtWrap.className = 'sheet-field toggle-field';
-        const switchLabel = document.createElement('label');
-        switchLabel.className = 'switch';
-        const mtInput = document.createElement('input');
-        mtInput.type = 'checkbox'; mtInput.checked = state.multitask;
-        const track = document.createElement('span'); track.className = 'track';
-        switchLabel.appendChild(mtInput); switchLabel.appendChild(track);
-        const mtText = document.createElement('span');
-        mtText.className = 'toggle-label';
-        mtText.textContent = 'Allow overlapping timers (off = starting one stops the rest)';
-        mtWrap.appendChild(switchLabel); mtWrap.appendChild(mtText);
-        mtInput.addEventListener('change', () => {
-            state.multitask = mtInput.checked;
-            updateZenVisibility(); save();
-        });
-        body.appendChild(mtWrap);
-
         openSheet('dayBackdrop');
     }
     function closeDaySheet() { closeSheet('dayBackdrop'); }
@@ -1385,6 +1350,15 @@
         if (!had) seedDefaults();
         // If loaded an old save with no color assignment, ensure colors exist.
         if (had) reassignColorsIfNeeded();
+        // Old saves may have multiple running timers. Only one stopwatch is allowed;
+        // keep the most recently started and bank the rest.
+        const all = [...state.fixed, ...state.percent];
+        const running = all.filter(b => b.startedAt);
+        if (running.length > 1) {
+            const latest = running.reduce((a, b) => (b.startedAt > a.startedAt ? b : a));
+            running.forEach(b => { if (b !== latest) stopBlock(b); });
+            save();
+        }
         applyMode();
         applyNowLabel();
 
@@ -1461,22 +1435,10 @@
             if (e.key === 'Escape' && doneModal.classList.contains('show')) closeDoneModal();
         });
 
-        // Keyboard: spacebar toggles whichever row is focused's timer; Ctrl/Cmd+Z undoes a remove.
+        // Keyboard: Ctrl/Cmd+Z undoes a remove.
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
                 if (undoState) { e.preventDefault(); doUndo(); }
-                return;
-            }
-            if (e.key === ' ' && document.activeElement && document.activeElement.closest('.category-row')) {
-                const row = document.activeElement.closest('.category-row');
-                // Only treat as timer toggle if the focused element is the button itself,
-                // so space doesn't hijack typing in inputs.
-                if (document.activeElement.classList.contains('btn-timer')) {
-                    e.preventDefault();
-                    const id = row.dataset.id;
-                    const listKey = row.closest('#percentContainer') ? 'percent' : 'fixed';
-                    toggleBlock(listKey, id);
-                }
             }
         });
 
