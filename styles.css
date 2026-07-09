@@ -166,9 +166,6 @@
             border-left: 3px solid #3a3a3a;
         }
         .category-row.is-percent { border-left: 3px dashed #2a2a2a; }
-        /* Fixed rows carry an extra start-time input and a Done button: name | time |
-           hrs | display | start/stop | Done | remove. */
-        .category-row.is-fixed { grid-template-columns: 1.1fr 0.85fr 0.5fr 0.85fr 56px 54px 28px; }
         .category-row.done { opacity: 0.62; }
         .segment.done { opacity: 0.5; }
         .category-row.active { background: #222; }
@@ -232,8 +229,9 @@
         }
         .btn-timer.running { background: var(--accent-color); color: #111; }
 
-        /* Done button (fixed blocks only): release leftover planned time to the splits.
-           Visible in run mode too, so it stays the one explicit "I'm finished" action. */
+        /* Done button: declare time used and reflow the leftover to the other
+           categories. Visible in run mode too, so it stays the one explicit
+           "I'm finished" action. */
         .btn-done {
             background: #333; border: none; color: #ddd;
             min-height: 44px; padding: 10px 4px; border-radius: 10px;
@@ -767,13 +765,6 @@
             background: rgba(58,134,255,0.07);
             border-radius: 8px; pointer-events: none;
         }
-
-        /* Anchor-to-start-time toggle (fixed blocks) */
-        .anchor-field { gap: 10px; }
-        .anchor-row { display: flex; align-items: center; gap: 10px; cursor: pointer; color: #ddd; font-size: 0.9rem; }
-        .anchor-wheels { display: flex; gap: 18px; }
-        .anchor-wheels.hidden { display: none; }
-        .anchor-wheels .wheel-group { flex: 1; }
 
         /* ── Percent slider ── */
         .pct-readout {

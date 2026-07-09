@@ -46,12 +46,13 @@
     function nowMs() { return Date.now(); }
 
     // --- State ---
-    // Each block: { id, name, hours|percent, banked(seconds), startedAt(ms|null), color, alarmed }
+    // Each block: { id, name, percent, done, usedSec, banked(seconds), startedAt(ms|null), color, alarmed, intervals }
+    // The app is percent-split stopwatches over a wake→bed window: each block's budget
+    // is its % of the bank, and the stopwatches track time spent against that budget.
     let state = {
         wake: DEFAULT_WAKE,
         bed: DEFAULT_BED,
-        mode: 'run',      // the app now lives in the run view; editing is per-category via hold-to-edit
-        fixed: [],
+        mode: 'run',      // the app lives in the run view; editing is per-category via hold-to-edit
         percent: [],
     };
 
@@ -79,10 +80,13 @@
                     wake: typeof s.wake === 'string' ? s.wake : DEFAULT_WAKE,
                     bed: typeof s.bed === 'string' ? s.bed : DEFAULT_BED,
                     mode: 'run',
-                    fixed: Array.isArray(s.fixed) ? s.fixed.map(norm) : [],
                     percent: Array.isArray(s.percent) ? s.percent.map(norm) : [],
                 };
                 // Old saves (pre-NOW) had a numeric totalBank and no wake/bed — migrated to defaults above.
+                // Older saves also had a separate `fixed` block list; that system is gone, so any
+                // fixed blocks are dropped on migration. If nothing percent remains, seed defaults
+                // so a migrated fixed-only save isn't blank.
+                if (state.percent.length === 0) seedDefaults();
                 return true;
             }
         } catch (e) {}
@@ -92,11 +96,9 @@
         return {
             id: b.id || uid(),
             name: b.name || 'Task',
-            hours: b.hours || 0,
             percent: b.percent || 0,
-            time: b.time || '',   // fixed blocks only: optional HH:MM start time-of-day
-            done: !!b.done,       // marked finished → fixed releases leftover to percent splits; percent settles at usedSec
-            usedSec: b.usedSec || 0,   // percent only: time declared used when marked done (drives the reflow)
+            done: !!b.done,       // marked finished → settles at usedSec; its leftover reflows to the other categories
+            usedSec: b.usedSec || 0,   // time declared used when marked done (drives the reflow)
             banked: b.banked || 0,
             startedAt: b.startedAt || null,
             color: b.color || pickColor(),
@@ -106,12 +108,6 @@
     }
 
     function seedDefaults() {
-        state.fixed = [
-            { id: uid(), name: 'Breakfast', hours: 0.5, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
-            { id: uid(), name: 'Lunch', hours: 0.5, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
-            { id: uid(), name: 'Transitions', hours: 1, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
-            { id: uid(), name: 'Night wind-down', hours: 1, time: '', banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [], done: false },
-        ];
         state.percent = [
             { id: uid(), name: 'Tithe', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
             { id: uid(), name: 'Freedom Fund', percent: 10, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] },
@@ -130,29 +126,19 @@
     // for done blocks, which settle on the amount the user declared via the done slider.
     function spentSec(b) {
         if (!b.done) return elapsedOf(b);
-        const isPercent = state.percent.some(x => x.id === b.id);
-        // Percent categories settle exactly on the declared value; fixed blocks fall
-        // back to the stopwatch's elapsed total when no value has been recorded yet.
-        return isPercent ? (b.usedSec || 0) : (b.usedSec || elapsedOf(b));
+        return b.usedSec || 0;
     }
     function startBlock(b) {
         if (b.startedAt) return;
         // Only one stopwatch runs at a time: stop any other active block first.
-        [...state.fixed, ...state.percent].forEach(o => {
+        state.percent.forEach(o => {
             if (o !== b && o.startedAt) stopBlock(o);
         });
         b.startedAt = nowMs();
         b.alarmed = false;       // re-arm the alarm when a fresh run begins
-        b.done = false;          // resuming a finished block un-finishes it (re-reserves its plan)
+        b.done = false;          // resuming a finished block un-finishes it (re-enters the reflow)
         zenOpen = true;          // starting a timer auto-opens the zen overlay
         updateZenVisibility();
-    }
-    // DONE: stop the timer (banking what was spent) and release any leftover planned
-    // time back to the percent splits. Toggling again undoes it (re-reserves the plan).
-    function toggleDone(b) {
-        if (b.done) { b.done = false; b.usedSec = 0; }
-        else { if (b.startedAt) stopBlock(b); b.done = true; b.alarmed = false; }
-        save(); updateLive();
     }
     function stopBlock(b) {
         if (!b.startedAt) return;
@@ -164,8 +150,8 @@
         b.startedAt = null;
         b.alarmed = false;
     }
-    function toggleBlock(listKey, id) {
-        const b = state[listKey].find(x => x.id === id);
+    function toggleBlock(id) {
+        const b = state.percent.find(x => x.id === id);
         if (!b) return;
         if (b.startedAt) stopBlock(b); else startBlock(b);
         save();
@@ -173,20 +159,14 @@
     }
 
     // --- Budget helpers ---
-    // A fixed block "reserves" time out of the day's bank. While not done it reserves
-    // its full planned budget; once DONE it reserves only what was actually spent, so
-    // any leftover flows back into the percent splits (their budgets grow). This is the
-    // single knob both the timeline layout and the percent split read from.
-    function plannedSec(b) { return (b.hours || 0) * 3600; }
-    function reserveSec(b) { return b.done ? Math.min(plannedSec(b), spentSec(b)) : plannedSec(b); }
-    function budgetSecFixed(b) { return reserveSec(b); }
-    // A percent block's budget. Done percent blocks settle at their declared usage
-    // (usedSec); the leftover (claim − all done usage) reflows to the non-done blocks
-    // in proportion to their percent, so finishing a category hands its unused time
-    // to the rest. With no done blocks this is identical to the old per-cent formula.
-    function budgetSecPercent(b, remainingHours) {
+    // A percent block's budget is its % of the wake→bed bank. Done blocks settle at
+    // their declared usage (usedSec); the leftover (claim − all done usage) reflows to
+    // the non-done blocks in proportion to their percent, so finishing a category hands
+    // its unused time to the rest. With no done blocks this is just percent × bank.
+    // The budget is stable — it does NOT shrink as a stopwatch spends time.
+    function budgetSecPercent(b) {
         const totalPct = state.percent.reduce((s, x) => s + (x.percent || 0), 0);
-        const claim = Math.max(0, remainingHours * 3600) * Math.min(100, totalPct) / 100;
+        const claim = Math.max(0, bankHours() * 3600) * Math.min(100, totalPct) / 100;
         const doneUsed = state.percent.filter(x => x.done).reduce((s, x) => s + (x.usedSec || 0), 0);
         if (b.done) return b.usedSec || 0;
         const pool = Math.max(0, claim - doneUsed);
@@ -194,25 +174,13 @@
         return denom > 0 ? pool * (b.percent || 0) / denom : 0;
     }
 
-    /* ── The period the percent categories split: the wake→bed bank minus the
-       fixed blocks reserved out of it. A fixed block reserves its full plan while
-       running, or only its declared spent time once done (leftover reflows to the
-       percent splits). Budget = percent × this period; it is stable — it does NOT
-       shrink as a stopwatch spends time. ── */
-    function remainingHours() {
-        const bank = bankHours();
-        const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
-        return Math.max(0, bank - totalFixed);
-    }
-    function periodHours() { return remainingHours(); }   // kept as an alias for clarity at call sites
-
     /* Shared budget/elapsed pair for a row, zen card, results row, and segment.
-       Budget = percent × period (the period is the wake→bed bank minus fixed
-       reservations). secAgainst is the stopwatch's elapsed — it counts up from
-       zero and is compared against the budget; it never feeds back into it. */
-    function rowBudget(b, isPercent) {
+       Budget = percent × (wake→bed bank). secAgainst is the stopwatch's elapsed —
+       it counts up from zero and is compared against the budget; it never feeds
+       back into it. */
+    function rowBudget(b) {
         return {
-            budget: isPercent ? budgetSecPercent(b, periodHours()) : budgetSecFixed(b),
+            budget: budgetSecPercent(b),
             secAgainst: spentSec(b),
         };
     }
@@ -226,9 +194,19 @@
         return base;
     }
     // Done blocks read as finished (green) — unless they ran over their planned
-    // budget, in which case they stay red like any over-spend.
+    // budget, in which case they stay red like any over-spend. planSec is the budget
+    // a block would have if it weren't done (its share of the bank, after other done
+    // blocks have reflowed their leftovers away).
+    function planSec(b) {
+        const totalPct = state.percent.reduce((s, x) => s + (x.percent || 0), 0);
+        const claim = Math.max(0, bankHours() * 3600) * Math.min(100, totalPct) / 100;
+        const doneUsed = state.percent.filter(x => x.done && x.id !== b.id).reduce((s, x) => s + (x.usedSec || 0), 0);
+        const pool = Math.max(0, claim - doneUsed);
+        const denom = state.percent.filter(x => !x.done || x.id === b.id).reduce((s, x) => s + (x.percent || 0), 0);
+        return denom > 0 ? pool * (b.percent || 0) / denom : 0;
+    }
     function displayColor(b, budgetSec, actualSec) {
-        if (b.done) return (plannedSec(b) > 0 && actualSec > plannedSec(b)) ? '#ff4d4d' : '#06d6a0';
+        if (b.done) return (planSec(b) > 0 && actualSec > planSec(b)) ? '#ff4d4d' : '#06d6a0';
         return ratioColor(b.color, budgetSec, actualSec);
     }
 
@@ -265,38 +243,32 @@
     }
 
     // --- Add / remove ---
-    function addFixed() {
-        const b = { id: uid(), name: 'New Block', hours: 1, time: '', done: false, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] };
-        state.fixed.push(b);
-        save(); renderStructure();
-        requestAnimationFrame(() => openEditSheet(b, 'fixed'));
-    }
     function addPercent() {
         const b = { id: uid(), name: 'New Cat', percent: 0, banked: 0, startedAt: null, color: pickColor(), alarmed: false, intervals: [] };
         state.percent.push(b);
         save(); renderStructure();
-        requestAnimationFrame(() => openEditSheet(b, 'percent'));
+        requestAnimationFrame(() => openEditSheet(b));
     }
-    function removeBlock(listKey, id) {
-        const list = state[listKey];
+    function removeBlock(id) {
+        const list = state.percent;
         const idx = list.findIndex(x => x.id === id);
         if (idx < 0) return;
         const block = list[idx];
         stopBlock(block);            // bank whatever was running so undo preserves it
         list.splice(idx, 1);
         save(); renderStructure();
-        showUndo(listKey, idx, block);
+        showUndo(idx, block);
     }
-    function showUndo(listKey, idx, block) {
-        undoState = { listKey, idx, block };
+    function showUndo(idx, block) {
+        undoState = { idx, block };
         showToast(`Removed “${block.name}”`, true);
         clearTimeout(undoTimer);
         undoTimer = setTimeout(() => { undoState = null; hideToast(); }, 6000);
     }
     function doUndo() {
         if (!undoState) return;
-        const { listKey, idx, block } = undoState;
-        state[listKey].splice(idx, 0, block);
+        const { idx, block } = undoState;
+        state.percent.splice(idx, 0, block);
         undoState = null;
         clearTimeout(undoTimer);
         hideToast();
@@ -317,10 +289,10 @@
     }
 
     // --- Field updates (no structural rebuild — preserves focus while typing) ---
-    function updateField(listKey, id, field, value) {
-        const b = state[listKey].find(x => x.id === id);
+    function updateField(id, field, value) {
+        const b = state.percent.find(x => x.id === id);
         if (!b) return;
-        if (field === 'hours' || field === 'percent') {
+        if (field === 'percent') {
             b[field] = parseFloat(value) || 0;
             b.alarmed = false;   // editing the budget re-arms the alarm
         } else {
@@ -331,31 +303,21 @@
     }
 
     // --- Rendering ---
-    function buildRow(listKey, b, isPercent) {
+    function buildRow(b) {
         const row = document.createElement('div');
-        row.className = 'category-row ' + (isPercent ? 'is-percent' : 'is-fixed');
+        row.className = 'category-row is-percent';
         row.dataset.id = b.id;
 
         const name = document.createElement('input');
         name.type = 'text'; name.value = b.name;
         if (state.mode === 'run') name.readOnly = true;
-        name.addEventListener('input', () => updateField(listKey, b.id, 'name', name.value));
+        name.addEventListener('input', () => updateField(b.id, 'name', name.value));
 
         const num = document.createElement('input');
-        num.type = 'number'; num.min = 0; num.step = isPercent ? 1 : 0.25;
-        num.value = isPercent ? b.percent : b.hours;
-        num.placeholder = isPercent ? '%' : 'hrs';
-        num.addEventListener('input', () => updateField(listKey, b.id, isPercent ? 'percent' : 'hours', num.value));
-
-        // Fixed blocks only: an optional start time-of-day that anchors the bar.
-        let time = null;
-        if (!isPercent) {
-            time = document.createElement('input');
-            time.type = 'time'; time.value = b.time || '';
-            time.title = 'Start time of day (optional — anchors this block on the timeline)';
-            if (state.mode === 'run') time.readOnly = true;
-            time.addEventListener('input', () => updateField(listKey, b.id, 'time', time.value));
-        }
+        num.type = 'number'; num.min = 0; num.step = 1;
+        num.value = b.percent;
+        num.placeholder = '%';
+        num.addEventListener('input', () => updateField(b.id, 'percent', num.value));
 
         const disp = document.createElement('div');
         disp.className = 'timer-display';
@@ -371,21 +333,17 @@
         btn.tabIndex = -1;
         // Stop the row's press handlers from also firing on this button; use click to toggle.
         btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
-        btn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); toggleBlock(listKey, b.id); });
+        btn.addEventListener('click', (e) => { e.stopPropagation(); ensureAudio(); toggleBlock(b.id); });
 
-        // DONE button for every block. Fixed: toggles done (releases leftover planned
-        // time to the percent splits). Percent: opens a slider to declare time used, then
-        // settles and reflows the leftover to the other percent categories (tap again to
-        // undo). stopPropagation so tapping it in run mode doesn't also toggle the timer.
-        let doneBtn = null;
-        doneBtn = document.createElement('button');
+        // DONE button: opens a slider to declare time used, then settles and reflows
+        // the leftover to the other categories (tap again to undo). stopPropagation so
+        // tapping it in run mode doesn't also toggle the timer.
+        const doneBtn = document.createElement('button');
         doneBtn.className = 'btn-done';
-        doneBtn.title = isPercent
-            ? 'Mark done — declare time used and reflow the rest to other categories (tap again to undo)'
-            : 'Mark done — declare time used and release any leftover to your other categories (tap again to undo)';
+        doneBtn.title = 'Mark done — declare time used and reflow the rest to other categories (tap again to undo)';
         doneBtn.addEventListener('click', (e) => {
             e.stopPropagation(); ensureAudio();
-            if (b.done) { isPercent ? toggleDonePercent(b) : toggleDone(b); }
+            if (b.done) undoDone(b);
             else openDoneSlider(b);
         });
         doneBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });   // don't start a hold-to-edit
@@ -393,11 +351,11 @@
         const rm = document.createElement('button');
         rm.className = 'btn-remove'; rm.textContent = '×';
         rm.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
-        rm.addEventListener('click', () => removeBlock(listKey, b.id));
+        rm.addEventListener('click', () => removeBlock(b.id));
 
         // Mobile edit-mode only: a chevron that expands the row to reveal the
-        // secondary fields (time/hours/buttons) at full size. Hidden on desktop
-        // and in run mode via CSS, so it never affects the grid layouts there.
+        // secondary fields at full size. Hidden on desktop and in run mode via CSS,
+        // so it never affects the grid layouts there.
         const chev = document.createElement('button');
         chev.className = 'chevron';
         chev.type = 'button';
@@ -423,8 +381,7 @@
         progress.appendChild(fill);
 
         row.append(name, num, disp, btn, rm, chev, progress);
-        if (time) row.insertBefore(time, num);   // fixed rows: name | time | hrs | …
-        if (doneBtn) row.insertBefore(doneBtn, rm);   // … start/stop | Done | remove
+        row.insertBefore(doneBtn, rm);   // … start/stop | Done | remove
 
         // Hold-to-edit: a long press (~450ms) opens the edit sheet; a quick tap
         // toggles the timer. Movement past a small threshold cancels the hold so
@@ -441,7 +398,7 @@
                 held = true;
                 row.classList.remove('holding');
                 if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
-                openEditSheet(b, listKey);
+                openEditSheet(b);
             }, 450);
         });
         row.addEventListener('pointermove', (e) => {
@@ -459,7 +416,7 @@
             // clean quick tap → toggle the timer
             e.preventDefault();
             ensureAudio();
-            toggleBlock(listKey, b.id);
+            toggleBlock(b.id);
         };
         row.addEventListener('pointerup', endPress);
         row.addEventListener('pointercancel', clearHold);
@@ -470,27 +427,26 @@
         row.setAttribute('role', 'button');
         row.setAttribute('aria-label', 'Edit ' + b.name);
         row.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); openEditSheet(b, listKey); }
-            else if (e.key === ' ') { e.preventDefault(); ensureAudio(); toggleBlock(listKey, b.id); }
+            if (e.key === 'Enter') { e.preventDefault(); openEditSheet(b); }
+            else if (e.key === ' ') { e.preventDefault(); ensureAudio(); toggleBlock(b.id); }
         });
 
         return row;
     }
 
     function renderStructure() {
-        const fC = document.getElementById('fixedContainer');
         const pC = document.getElementById('percentContainer');
         const tlSegs = document.getElementById('tlSegs');
         const tlBlobs = document.getElementById('tlBlobs');
         const tlTicks = document.getElementById('tlTicks');
-        fC.innerHTML = ''; pC.innerHTML = ''; tlSegs.innerHTML = ''; tlBlobs.innerHTML = '';
+        pC.innerHTML = ''; tlSegs.innerHTML = ''; tlBlobs.innerHTML = '';
         for (const k in rowEls) delete rowEls[k];
         for (const k in segEls) delete segEls[k];
         for (const k in blobEls) delete blobEls[k];
 
-        const attach = (container, listKey, isPercent) => {
-            state[listKey].forEach(b => {
-                const row = buildRow(listKey, b, isPercent);
+        const attach = (container) => {
+            state.percent.forEach(b => {
+                const row = buildRow(b);
                 container.appendChild(row);
                 rowEls[b.id] = {
                     row,
@@ -512,8 +468,7 @@
                 seg._fill = fill;   // cached on the seg, reuses segEls
             });
         };
-        attach(fC, 'fixed', false);
-        attach(pC, 'percent', true);
+        attach(pC);
 
         freeSeg = document.createElement('div');
         freeSeg.className = 'segment free';
@@ -550,15 +505,15 @@
         tlTicks.appendChild(end);
     }
 
-    function updateRow(b, isPercent, remainingHours) {
+    function updateRow(b) {
         const e = rowEls[b.id];
         if (!e) return;
         const sec = elapsedOf(b);
         const running = !!b.startedAt;
         const runMode = state.mode === 'run';
 
-        // Budget = percent × period (or the fixed reservation); secAgainst is the stopwatch's elapsed.
-        const { budget, secAgainst } = rowBudget(b, isPercent);
+        // Budget = percent × (wake→bed bank); secAgainst is the stopwatch's elapsed.
+        const { budget, secAgainst } = rowBudget(b);
 
         // Big display: stopwatch counts up from zero.
         e.timerElapsed.textContent = formatDigitalTime(sec);
@@ -622,21 +577,13 @@
 
     function recalc() {
         const bank = bankHours();
-        const totalFixed = state.fixed.reduce((s, b) => s + reserveSec(b) / 3600, 0);
-        const remaining = Math.max(0, bank - totalFixed);
-        document.getElementById('remainingCaption').textContent =
-            remaining > 0 ? 'splitting ' + formatHumanTime(remaining * 3600) + ' after fixed blocks'
-                          : 'no time left after fixed blocks';
         let totalPercent = 0;
         state.percent.forEach(b => totalPercent += (b.percent || 0));
 
         // ── Timeline geometry. The bar spans wake→bed; segments are absolutely
-        // positioned. A fixed block with a start time anchors at that wall-clock
-        // position (otherwise it flows from the cursor); percent blocks fill the
-        // remainder. ──
-        const { wake, len } = dayBoundsMin();
+        // positioned. Percent blocks fill from wake in order; each spans its % of
+        // the bank. The free segment fills whatever's left unallocated. ──
         const dayLenH = dayLengthHours();
-        const dayLenSec = dayLenH * 3600;
         const npct = nowPctOfDay();
         let cursor = 0;
 
@@ -663,30 +610,13 @@
             cursor = Math.max(cursor, leftPct + w);
         };
 
-        // Anchored left% for a fixed block's start time (clamped to the day window).
-        const fixedLeftPct = (b) => {
-            if (!b.time) return cursor;
-            let t = timeToMin(b.time);
-            if (t < wake) t += 1440;            // past-midnight block in a wrapped day
-            return len > 0 ? Math.max(0, Math.min(100, ((t - wake) / len) * 100)) : 0;
-        };
-
-        // Fixed blocks at their start time (or from the cursor), then percent of
-        // the remainder.
-        state.fixed.forEach(b => {
-            const bsec = budgetSecFixed(b);   // = reserve: planned, or actual-once-done
-            const w = dayLenSec > 0 ? (bsec / dayLenSec) * 100 : 0;
-            const left = fixedLeftPct(b);
-            placeSeg(b, left, w, bsec, elapsedOf(b));
-            const seg = segEls[b.id];
-            if (seg) seg.title = b.name + (b.time ? ' @ ' + formatClock(timeToMin(b.time)) : '') + (b.done ? ' · done' : '') + ': ' + formatHumanTime(bsec) + (b.done ? ' taken' : ' budget') + ' · ' + formatHumanTime(elapsedOf(b)) + ' actual';
-        });
+        // Percent blocks flow from wake; each spans its % of the wake→bed bank.
         state.percent.forEach(b => {
-            const bsec = budgetSecPercent(b, remaining);
-            const w = dayLenH > 0 ? (b.percent / 100) * (remaining / dayLenH) * 100 : 0;
+            const bsec = budgetSecPercent(b);
+            const w = dayLenH > 0 ? (b.percent / 100) * 100 : 0;   // bank == dayLen now
             placeSeg(b, cursor, w, bsec, elapsedOf(b));
             const seg = segEls[b.id];
-            if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of remaining) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
+            if (seg) seg.title = b.name + ' (' + b.percent + '% = ' + formatHumanTime(bsec) + ' of bank) · ' + formatHumanTime(elapsedOf(b)) + ' actual';
         });
 
         // Free / unallocated slack fills whatever's left.
@@ -716,14 +646,14 @@
 
         renderBlobs(npct);
 
-        // Caption: plan summary — time left to split after fixed blocks, plus slack.
+        // Caption: plan summary — time in the bank to split, plus slack.
         const caption = document.getElementById('vizCaption');
         caption.textContent =
-            formatHumanTime(remaining * 3600) + ' left to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
+            formatHumanTime(bank * 3600) + ' to split  ·  ' + formatHumanTime(freeHours * 3600) + ' free';
 
         document.getElementById('warning').style.display = totalPercent > 100 ? 'block' : 'none';
-        buildResults(bank, remaining, totalPercent);
-        return { bank, remaining, totalPercent };
+        buildResults(bank, totalPercent);
+        return { bank, totalPercent };
     }
 
     /* Spent blobs: one per logged interval (finished + the live running one),
@@ -734,7 +664,7 @@
         const { startMs, lenMs } = dayWindowMs();
         const now = nowMs();
         const seen = new Set();
-        [...state.fixed, ...state.percent].forEach(b => {
+        state.percent.forEach(b => {
             const ivs = (Array.isArray(b.intervals) ? b.intervals : []).slice();
             if (b.startedAt) ivs.push({ s: b.startedAt, e: now });   // live running interval
             ivs.forEach((iv, i) => {
@@ -774,21 +704,14 @@
         return h12 + ':' + String(m60).padStart(2, '0') + ' ' + ampm;
     }
 
-    function buildResults(bank, remaining, totalPercent) {
+    function buildResults(bank, totalPercent) {
         const list = document.getElementById('resultsList');
         // Rebuild only when the set of blocks changes (add/remove/undo);
         // otherwise update text in place so running timers don't churn the DOM.
-        const sig = state.fixed.map(b => b.id).join(',') + '|' + state.percent.map(b => b.id).join(',');
+        const sig = state.percent.map(b => b.id).join(',');
         if (list.dataset.sig !== sig) {
             list.dataset.sig = sig;
             list.innerHTML = '';
-            state.fixed.forEach(b => {
-                const item = document.createElement('div');
-                item.className = 'result-item';
-                item.dataset.id = b.id;
-                item.innerHTML = `<span>${escapeHtml(b.name)} (Fixed)</span><span><span class="budget-val" style="color:var(--text-dim)">Budget 0 mins</span> | <span class="time-val">Actual 0 mins</span></span>`;
-                list.appendChild(item);
-            });
             state.percent.forEach(b => {
                 const item = document.createElement('div');
                 item.className = 'result-item';
@@ -798,25 +721,15 @@
             });
             const free = document.createElement('div');
             free.className = 'result-item free-row';
-            free.innerHTML = `<span style="color:var(--text-dim)">Free of remaining / unallocated</span><span class="time-val" style="color:var(--text-dim)">0 mins</span>`;
+            free.innerHTML = `<span style="color:var(--text-dim)">Free / unallocated</span><span class="time-val" style="color:var(--text-dim)">0 mins</span>`;
             list.appendChild(free);
         }
 
         // Update text in place (no innerHTML churn while timers run)
-        state.fixed.forEach(b => {
-            const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
-            if (!item) return;
-            const { budget, secAgainst } = rowBudget(b, false);
-            item.querySelector('span:first-child').textContent = `${b.name} (Fixed${b.done ? ' · done' : ''})`;
-            item.querySelector('.budget-val').textContent = `${b.done ? 'Taken' : 'Budget'} ${formatHumanTime(budget)}`;
-            const tv = item.querySelector('.time-val');
-            tv.textContent = `Actual ${formatHumanTime(secAgainst)}`;
-            tv.style.color = displayColor(b, budget, secAgainst);
-        });
         state.percent.forEach(b => {
             const item = list.querySelector(`.result-item[data-id="${b.id}"]`);
             if (!item) return;
-            const { budget, secAgainst } = rowBudget(b, true);
+            const { budget, secAgainst } = rowBudget(b);
             item.querySelector('span:first-child').textContent = `${b.name} (${b.percent}%${b.done ? ' · done' : ''})`;
             item.querySelector('.budget-val').textContent = `${b.done ? 'Used' : 'Budget'} ${formatHumanTime(budget)}`;
             const tv = item.querySelector('.time-val');
@@ -824,8 +737,7 @@
             tv.style.color = displayColor(b, budget, secAgainst);
         });
         const freeRow = list.querySelector('.free-row');
-        const period = periodHours();
-        const freeH = Math.max(0, period - period * Math.min(totalPercent, 100) / 100);
+        const freeH = Math.max(0, bank - bank * Math.min(totalPercent, 100) / 100);
         if (freeRow) {
             freeRow.style.display = freeH > 0 ? '' : 'none';
             freeRow.querySelector('.time-val').textContent = formatHumanTime(freeH * 3600);
@@ -833,24 +745,24 @@
     }
 
     function updateLive() {
-        const { remaining } = recalc();
-        state.fixed.forEach(b => updateRow(b, false, remaining));
-        state.percent.forEach(b => updateRow(b, true, remaining));
+        recalc();
+        state.percent.forEach(b => updateRow(b));
         updateZen();              // refresh zen cards in place while visible
         updateZenVisibility();    // auto-show/hide as timers start and stop
     }
 
     // Zero every block's logged time for a fresh start (used by both "reset the day"
-    // and "start day now"). Keeps category structure; un-finishes percent categories
-    // so the reflow starts clean. Fixed `done` is left as-is (pre-existing behavior).
+    // and "start day now"). Keeps category structure; un-finishes categories so the
+    // reflow starts clean.
     function zeroTimers() {
-        [...state.fixed, ...state.percent].forEach(b => {
+        state.percent.forEach(b => {
             b.banked = 0;
             b.startedAt = null;
             b.alarmed = false;
             b.intervals = [];
+            b.done = false;
+            b.usedSec = 0;
         });
-        state.percent.forEach(b => { b.done = false; b.usedSec = 0; });
     }
 
     // --- Reset the day: zero out all time, keep the structure ---
@@ -955,7 +867,7 @@
     let zenOpen = false;
 
     function runningBlocks() {
-        return [...state.fixed, ...state.percent].filter(b => b.startedAt);
+        return state.percent.filter(b => b.startedAt);
     }
     function updateZenVisibility() {
         const overlay = document.getElementById('zenOverlay');
@@ -978,9 +890,7 @@
             return;
         }
 
-        const isPercent = state.percent.includes(b);
-        const remaining = remainingHours();
-        const { budget, secAgainst } = rowBudget(b, isPercent);
+        const { budget, secAgainst } = rowBudget(b);
         const card = document.createElement('div');
         card.className = 'zen-card';
         card.style.borderTopColor = b.color;
@@ -1069,8 +979,7 @@
             doneValEl = document.getElementById('doneVal');
         }
         document.getElementById('doneTitle').textContent = `Mark “${b.name}” done`;
-        const isPercent = state.percent.some(x => x.id === b.id);
-        const budgetSec = isPercent ? budgetSecPercent(b, periodHours()) : plannedSec(b);
+        const budgetSec = budgetSecPercent(b);
         const budgetMin = Math.floor(budgetSec / 60);
         const elapsedMin = Math.floor(elapsedOf(b) / 60);
         const maxMin = Math.max(budgetMin, elapsedMin, 0);
@@ -1099,8 +1008,8 @@
         closeDoneModal();
         updateLive();
     }
-    // Undo: un-finish a percent category and return its leftover to the reflow.
-    function toggleDonePercent(b) {
+    // Undo: un-finish a category and return its leftover to the reflow.
+    function undoDone(b) {
         b.done = false;
         b.usedSec = 0;
         save();
@@ -1111,7 +1020,7 @@
     // The app lives in the run view; editing is a mobile bottom-sheet with scroll
     // wheels for time and a slider for percentages. Built dynamically per block.
     const WHEEL_ITEM_H = 40;
-    let editCtx = null;       // { b, listKey, wheels..., apply() }
+    let editCtx = null;       // { b, trigger }
     let dayCtx = null;
 
     /* A scroll-snap wheel. labels[] is the displayed text per index; the caller
@@ -1175,9 +1084,8 @@
         return g;
     }
 
-    function openEditSheet(b, listKey) {
-        const isPercent = listKey === 'percent';
-        editCtx = { b, listKey, trigger: document.activeElement };   // restore focus here on close
+    function openEditSheet(b) {
+        editCtx = { b, trigger: document.activeElement };   // restore focus here on close
         document.getElementById('editTitle').textContent = 'Edit';
         const body = document.getElementById('editBody');
         body.innerHTML = '';
@@ -1193,73 +1101,24 @@
         nameWrap.appendChild(nameInput);
         body.appendChild(nameWrap);
 
-        if (isPercent) {
-            // Percent slider
-            const pctWrap = document.createElement('div');
-            pctWrap.className = 'sheet-field';
-            pctWrap.appendChild(buildSectionLabel('Percentage of remaining'));
-            const readout = document.createElement('div');
-            readout.className = 'pct-readout'; readout.textContent = (b.percent || 0) + '%';
-            const slider = document.createElement('input');
-            slider.type = 'range'; slider.min = 0; slider.max = 100; slider.step = 1;
-            slider.value = b.percent || 0; slider.className = 'pct-slider';
-            slider.addEventListener('input', () => {
-                b.percent = parseInt(slider.value, 10) || 0;
-                b.alarmed = false;
-                readout.textContent = b.percent + '%';
-                save(); updateLive();
-            });
-            pctWrap.appendChild(readout);
-            pctWrap.appendChild(slider);
-            body.appendChild(pctWrap);
-        } else {
-            // Hours + minutes wheels for the budget
-            const totalMin = Math.round((b.hours || 0) * 60);
-            let h = Math.min(23, Math.floor(totalMin / 60));
-            let m = Math.min(55, (totalMin % 60));
-            // round minutes to nearest 5
-            m = Math.round(m / 5) * 5; if (m >= 60) { m = 0; h = Math.min(23, h + 1); }
-            const apply = () => {
-                b.hours = h + m / 60;
-                b.alarmed = false;
-                save(); updateLive();
-            };
-            const hWheel = createWheel(HOUR_LABELS, h, (i) => { h = i; apply(); });
-            const mWheel = createWheel(MIN_LABELS, m / 5, (i) => { m = i * 5; apply(); });
-            body.appendChild(buildWheelGroup('Hours', hWheel));
-            body.appendChild(buildWheelGroup('Minutes', mWheel));
-
-            // Optional start-time-of-day anchor
-            const anchorWrap = document.createElement('div');
-            anchorWrap.className = 'sheet-field anchor-field';
-            const anchorRow = document.createElement('label');
-            anchorRow.className = 'anchor-row';
-            const cb = document.createElement('input');
-            cb.type = 'checkbox'; cb.checked = !!b.time;
-            const cbLabel = document.createElement('span');
-            cbLabel.textContent = 'Anchor to a start time';
-            anchorRow.appendChild(cb); anchorRow.appendChild(cbLabel);
-            anchorWrap.appendChild(anchorRow);
-
-            const startWheelsHost = document.createElement('div');
-            startWheelsHost.className = 'anchor-wheels' + (cb.checked ? '' : ' hidden');
-            let sh = timeToHM(b.time).h, sm = Math.round(timeToHM(b.time).m / 5) * 5;
-            const applyStart = () => {
-                if (!cb.checked) { b.time = ''; save(); updateLive(); return; }
-                b.time = pad2(sh) + ':' + pad2(sm);
-                save(); updateLive();
-            };
-            const shWheel = createWheel(HOUR_LABELS, sh, (i) => { sh = i; applyStart(); });
-            const smWheel = createWheel(MIN_LABELS, sm / 5, (i) => { sm = i * 5; applyStart(); });
-            startWheelsHost.appendChild(buildWheelGroup('Start hour', shWheel));
-            startWheelsHost.appendChild(buildWheelGroup('Start min', smWheel));
-            anchorWrap.appendChild(startWheelsHost);
-            cb.addEventListener('change', () => {
-                startWheelsHost.classList.toggle('hidden', !cb.checked);
-                applyStart();
-            });
-            body.appendChild(anchorWrap);
-        }
+        // Percent slider
+        const pctWrap = document.createElement('div');
+        pctWrap.className = 'sheet-field';
+        pctWrap.appendChild(buildSectionLabel('Percentage of the time bank'));
+        const readout = document.createElement('div');
+        readout.className = 'pct-readout'; readout.textContent = (b.percent || 0) + '%';
+        const slider = document.createElement('input');
+        slider.type = 'range'; slider.min = 0; slider.max = 100; slider.step = 1;
+        slider.value = b.percent || 0; slider.className = 'pct-slider';
+        slider.addEventListener('input', () => {
+            b.percent = parseInt(slider.value, 10) || 0;
+            b.alarmed = false;
+            readout.textContent = b.percent + '%';
+            save(); updateLive();
+        });
+        pctWrap.appendChild(readout);
+        pctWrap.appendChild(slider);
+        body.appendChild(pctWrap);
 
         // Delete: two-tap confirm so a misclick in the sheet can't drop a category.
         const delBtn = document.getElementById('editDelete');
@@ -1273,7 +1132,7 @@
                 return;
             }
             clearTimeout(armTimer);
-            removeBlock(listKey, b.id);
+            removeBlock(b.id);
             closeEditSheet();
         };
         // Reset the delete button label for next time when the sheet closes.
@@ -1343,8 +1202,7 @@
         if (had) reassignColorsIfNeeded();
         // Old saves may have multiple running timers. Only one stopwatch is allowed;
         // keep the most recently started and bank the rest.
-        const all = [...state.fixed, ...state.percent];
-        const running = all.filter(b => b.startedAt);
+        const running = state.percent.filter(b => b.startedAt);
         if (running.length > 1) {
             const latest = running.reduce((a, b) => (b.startedAt > a.startedAt ? b : a));
             running.forEach(b => { if (b !== latest) stopBlock(b); });
@@ -1365,7 +1223,6 @@
 
         document.getElementById('startNowBtn').addEventListener('click', () => { ensureAudio(); openStartNowModal(); });
 
-        document.getElementById('addFixedBtn').addEventListener('click', addFixed);
         document.getElementById('addPercentBtn').addEventListener('click', addPercent);
         document.getElementById('toastUndo').addEventListener('click', doUndo);
 
@@ -1455,7 +1312,7 @@
     // Make sure existing blocks have a color from the palette (for very old saves).
     function reassignColorsIfNeeded() {
         let i = 0;
-        [...state.fixed, ...state.percent].forEach(b => {
+        state.percent.forEach(b => {
             if (!b.color) b.color = PALETTE[i % PALETTE.length];
             i++;
         });

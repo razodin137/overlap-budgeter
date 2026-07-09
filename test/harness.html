@@ -58,30 +58,32 @@
       assert('modeBtn removed', !D.getElementById('modeBtn'));
       assert('wakeInput removed', !D.getElementById('wakeInput'));
       assert('resultsList present (no bricking)', !!D.getElementById('resultsList'));
-      assert('4 fixed rows render', D.querySelectorAll('#fixedContainer .category-row').length === 4, D.querySelectorAll('#fixedContainer .category-row').length + ' rows');
+      assert('no fixed-block container remains', !D.getElementById('fixedContainer'));
       assert('6 percent rows render', D.querySelectorAll('#percentContainer .category-row').length === 6, D.querySelectorAll('#percentContainer .category-row').length + ' rows');
 
       // 2. Segment fills (running category fills up)
       var segs = D.querySelectorAll('#tlSegs .segment');
       var fills = D.querySelectorAll('#tlSegs .segment .segment-fill');
-      assert('every category segment has a fill child', fills.length === 10, fills.length + ' fills for ' + segs.length + ' segments');
+      assert('every category segment has a fill child', fills.length === 6, fills.length + ' fills for ' + segs.length + ' segments');
 
       // 3. NOW line paints the running timer's color; segment + pill fill reflect spent/budget
-      var b = state.fixed[0];                  // Breakfast, 0.5h budget
-      var orig = { sa: b.startedAt, bk: b.banked };
-      b.banked = 0; b.startedAt = nowMs() - 60 * 1000;   // 1 minute spent
+      var b = state.percent[0];                 // Tithe, 10% of the wake→bed bank
+      var orig = { sa: b.startedAt, bk: b.banked, done: b.done, usedSec: b.usedSec };
+      b.banked = 0; b.startedAt = nowMs() - 60 * 1000; b.done = false; b.usedSec = 0;   // 1 minute spent
       updateLive();
       var nowColor = D.getElementById('tlNow').style.getPropertyValue('--now-color');
       assert('NOW line paints running timer color', nowColor === b.color, 'got ' + nowColor);
       var seg = segEls[b.id];
       var fillW = seg.querySelector('.segment-fill').style.width;
-      assert('running segment fill = spent/budget (~3.33%)', fillW.indexOf('3.33') === 0, 'got ' + fillW);
+      var budgetSec = W.eval('budgetSecPercent(state.percent[0])');
+      var exp = budgetSec > 0 ? (60 / budgetSec) * 100 : 0;   // 1 min / budget
+      assert('running segment fill = spent/budget', Math.abs(parseFloat(fillW) - exp) < 0.01, 'got ' + fillW + ' exp ' + exp);
       var row = D.querySelector('.category-row[data-id="' + b.id + '"]');
       var pfW = row.querySelector('.progress-fill').style.width;
-      assert('pill fill matches segment fill', pfW.indexOf('3.33') === 0, 'got ' + pfW);
+      assert('pill fill matches segment fill', Math.abs(parseFloat(pfW) - exp) < 0.01, 'got ' + pfW + ' exp ' + exp);
       assert('pill fill has stripe image (used-time like timeline)', !!row.querySelector('.progress-fill').style.backgroundImage, 'no bg image');
       assert('pill shows used-of-budget label', /of\s/.test(row.querySelector('.td-budget').textContent), 'label="' + row.querySelector('.td-budget').textContent + '"');
-      b.startedAt = null; b.banked = 60;
+      b.startedAt = null; b.banked = 60; b.done = orig.done; b.usedSec = orig.usedSec;
       updateLive();
       assert('NOW line clears color on stop', D.getElementById('tlNow').style.getPropertyValue('--now-color') === '', 'still set');
 
@@ -99,16 +101,10 @@
       assert('day readout shows length', /to spend/.test(D.querySelector('#dayBody .day-readout').textContent), D.querySelector('#dayBody .day-readout').textContent);
       closeDaySheet();
 
-      // 6. Edit fixed: wheels update budget hours
-      openEditSheet(state.fixed[0], 'fixed');
-      var fw = D.querySelectorAll('#editBody .wheel');
-      fw[0].scrollTop = 2 * 40; fw[0].dispatchEvent(new Event('scroll'));      // hours = 2
-      fw[1].scrollTop = (30/5) * 40; fw[1].dispatchEvent(new Event('scroll'));  // min = 30
-      assert('fixed wheels update hours', state.fixed[0].hours === 2.5, 'hours=' + state.fixed[0].hours);
-      closeEditSheet();
+      // 6. (removed) fixed-block hours wheels no longer exist.
 
       // 7. Edit percent: slider updates percent
-      openEditSheet(state.percent[0], 'percent');
+      openEditSheet(state.percent[0]);
       var slider = D.querySelector('#editBody .pct-slider');
       slider.value = 37; slider.dispatchEvent(new Event('input'));
       assert('percent slider updates state', state.percent[0].percent === 37, 'pct=' + state.percent[0].percent);
@@ -116,17 +112,20 @@
       closeEditSheet();
 
       // 8. Delete is two-tap (armed on first tap)
-      var before = state.fixed.length;
-      openEditSheet(state.fixed[0], 'fixed');
+      var before = state.percent.length;
+      openEditSheet(state.percent[0]);
       var del = D.getElementById('editDelete');
       del.click();
       assert('delete arms on first tap', del.textContent.indexOf('again') >= 0, 'text="' + del.textContent + '"');
-      assert('nothing deleted on first tap', state.fixed.length === before, state.fixed.length + ' != ' + before);
+      assert('nothing deleted on first tap', state.percent.length === before, state.percent.length + ' != ' + before);
       del.click();
-      assert('delete removes on second tap', state.fixed.length === before - 1, state.fixed.length + ' != ' + (before-1));
+      assert('delete removes on second tap', state.percent.length === before - 1, state.percent.length + ' != ' + (before-1));
       closeEditSheet();
+      // undo the delete so the full 6 defaults remain for the scenarios below
+      W.eval('doUndo()');
+      assert('undo restores the removed category', state.percent.length === before, state.percent.length + ' != ' + before);
 
-      // restore Breakfast so repeated runs are stable
+      // restore Tithe so repeated runs are stable
       b.startedAt = orig.sa; b.banked = orig.bk; save();
 
       // 9. "Start day now" sets wake to now, bed to now + slider hours, and erases
@@ -155,31 +154,33 @@
       updateLive();
 
       // 10. Only one stopwatch may run at a time.
-      var f0 = state.fixed[0], f1 = state.fixed[1];
+      var f0 = state.percent[0], f1 = state.percent[1];
       var f0Orig = { banked: f0.banked, startedAt: f0.startedAt },
           f1Orig = { banked: f1.banked, startedAt: f1.startedAt };
       f0.banked = 0; f0.startedAt = null; f1.banked = 0; f1.startedAt = null;
-      W.eval("toggleBlock('fixed', state.fixed[0].id)");
+      W.eval("toggleBlock(state.percent[0].id)");
       var afterFirst = W.eval('runningBlocks().length');
-      assert('starting first fixed timer runs one stopwatch', afterFirst === 1, 'got ' + afterFirst);
-      W.eval("toggleBlock('fixed', state.fixed[1].id)");
+      assert('starting first timer runs one stopwatch', afterFirst === 1, 'got ' + afterFirst);
+      W.eval("toggleBlock(state.percent[1].id)");
       var afterSecond = W.eval('runningBlocks().length');
       assert('starting second timer stops the first', afterSecond === 1, 'got ' + afterSecond);
-      assert('first timer is banked when second starts', state.fixed[0].startedAt === null, 'still running');
+      assert('first timer is banked when second starts', state.percent[0].startedAt === null, 'still running');
       // stop the remaining timer and restore
-      W.eval("toggleBlock('fixed', state.fixed[1].id)");
+      W.eval("toggleBlock(state.percent[1].id)");
       f0.banked = f0Orig.banked; f0.startedAt = f0Orig.startedAt;
       f1.banked = f1Orig.banked; f1.startedAt = f1Orig.startedAt;
       save();
 
       // 11. Big readout counts up (stopwatch), not down from budget.
-      var f = state.fixed[0];
-      var fOrig2 = { banked: f.banked, startedAt: f.startedAt, hours: f.hours };
-      f.banked = 60; f.startedAt = nowMs() - 120 * 1000; f.hours = 0.5;   // 3 min elapsed, 30 min budget
+      var f = state.percent[0];
+      var fOrig2 = { banked: f.banked, startedAt: f.startedAt, percent: f.percent };
+      // Size this block to a 30-min budget; with 3 min elapsed, a countdown would show 27.
+      var wantPct = 30 / (W.eval('bankHours()') * 60) * 100;
+      f.banked = 180; f.startedAt = null; f.percent = wantPct;   // 3 min elapsed, 30 min budget
       updateLive();
       var big = D.querySelector('.category-row[data-id="' + f.id + '"] .td-elapsed').textContent;
       assert('big display counts up elapsed time', /3/.test(big) && !/27/.test(big), 'display="' + big + '"');
-      f.banked = fOrig2.banked; f.startedAt = fOrig2.startedAt; f.hours = fOrig2.hours;
+      f.banked = fOrig2.banked; f.startedAt = fOrig2.startedAt; f.percent = fOrig2.percent;
       save();
     } catch (e) {
       failed++;

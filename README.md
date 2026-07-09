@@ -1,6 +1,6 @@
 # Overlap Time Budgeter
 
-A single-file time-budgeting app: set a daily bank of hours, break it into **fixed blocks** (hours) and **variable allocations** (% of the time left after fixed blocks), then run timers against each and see at a glance whether you're on, near, or over budget. All state lives in the browser's `localStorage`; there is no backend.
+A single-file time-budgeting app: pick a window of time — either a set point in the day (wake→bed) or starting from now — and split it into **percentage allocations**. Run a stopwatch against each and see at a glance whether you're on, near, or over budget. All state lives in the browser's `localStorage`; there is no backend.
 
 Live at <https://timer.godisgood.top>.
 
